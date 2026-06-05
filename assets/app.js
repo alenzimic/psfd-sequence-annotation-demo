@@ -2261,7 +2261,7 @@ function relationContextRow(rel, options = {}) {
   const object = state.indexes.entityById.get(rel.object_node_id);
   const subjectLabel = subject ? entityName(subject) : rel.subject || "subject";
   const objectLabel = object ? entityName(object) : rel.object || "object";
-  const contexts = relationContextEntities(rel);
+  const contexts = rawRelationContextEntities(rel);
   const active = rel.record_id === (options.activeId || state.focusedRelationId);
   const visibleContexts = contexts.slice(0, options.compact ? 4 : 8);
   const eventId = options.eventId || asArray(rel.event_ids)[0] || "";
