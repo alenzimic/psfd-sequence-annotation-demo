@@ -3953,7 +3953,7 @@ function renderDiscoverWorkbench() {
         </div>
         <div class="attribute-filter-panel">
           <div>
-            <h4>Choose PSFD attributes to extract for the submitted entities</h4>
+            <h4>Choose PCO/PSFD attributes to extract for the submitted entities</h4>
             <small>Only triples where the submitted compound or matched protein is entity 1 or entity 2 are exported.</small>
           </div>
           <div class="attribute-grid">
