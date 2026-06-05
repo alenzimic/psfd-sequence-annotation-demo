@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PSFD Sequence Annotation Demo</title>
+  <link rel="stylesheet" href="assets/styles.css?v=20260605-092914">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>PSFD Sequence Annotation Demo</h1>
+      <span id="buildText"></span>
+    </div>
+    <div class="top-controls">
+      <label class="paper-picker">
+        <span>Paper</span>
+        <select id="paperSelect"></select>
+      </label>
+      <label class="global-search">
+        <span>Search</span>
+        <input id="searchInput" type="search" placeholder="gene, compound, trait, relation, evidence ID">
+      </label>
+    </div>
+  </header>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <section class="panel paper-panel">
+        <h2 id="paperTitle">Loading</h2>
+        <div id="paperMeta" class="paper-meta"></div>
+        <div id="statsGrid" class="stats-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="tabs" role="tablist" aria-label="Explorer mode">
+          <button class="tab active" data-tab="discover" type="button">Annotate</button>
+          <button class="tab" data-tab="dependencies" type="button">Dependencies</button>
+          <button class="tab" data-tab="events" type="button">Events</button>
+          <button class="tab" data-tab="relations" type="button">Relations</button>
+          <button class="tab" data-tab="entities" type="button">Entities</button>
+          <button class="tab" data-tab="paths" type="button">Pathfinder</button>
+        </div>
+      </section>
+
+      <section id="filterPanel" class="panel filters"></section>
+      <section class="panel list-panel">
+        <div class="list-heading">
+          <h2 id="listTitle">Items</h2>
+          <span id="listCount"></span>
+        </div>
+        <div id="resultList" class="result-list"></div>
+      </section>
+    </aside>
+
+    <main id="mainPanel" class="main-panel"></main>
+
+    <aside id="inspectorPanel" class="inspector"></aside>
+  </div>
+
+  <div id="entityModal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="modal-close" type="button" data-close-modal aria-label="Close">&times;</button>
+      <div id="modalBody"></div>
+    </section>
+  </div>
+
+  <template id="loadingTemplate">
+    <div class="empty-state">
+      <strong>Loading demo data</strong>
+      <span>Fetching static JSON bundle.</span>
+    </div>
+  </template>
+
+  <script src="assets/app.js?v=20260605-092914"></script>
+</body>
+</html>
