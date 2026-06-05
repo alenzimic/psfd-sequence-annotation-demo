@@ -4705,9 +4705,7 @@ function renderRelationExtractionResults() {
           <span>${fmt(state.relationExtractionResults.length)} row${state.relationExtractionResults.length === 1 ? "" : "s"}</span>
         </div>
         ${relationDownloadSchema()}
-        <div class="relation-result-list">
-          ${rows.map(relationExtractionResultCard).join("")}
-        </div>
+        ${relationExtractionResultsTable(rows)}
         ${state.relationExtractionResults.length > rows.length ? `<p class="muted tiny">Showing first ${fmt(rows.length)} rows. The download includes all rows.</p>` : ""}
       </section>
     </div>
@@ -4743,31 +4741,52 @@ function relationDownloadSchema() {
   `;
 }
 
-function relationExtractionResultCard(row) {
+function relationExtractionResultsTable(rows) {
   return `
-    <article class="relation-result-card">
-      <div class="relation-result-primary">
-        <div class="relation-result-query">
-          <span>Query</span>
-          <strong>${esc(row.query_name || "-")}</strong>
-        </div>
-        ${relationExtractionRelationButton(row)}
-        <div class="relation-result-attribute">
-          <span>Attribute</span>
-          <strong>${esc(row.attribute_type || "-")}</strong>
-        </div>
-      </div>
-      <div class="relation-result-contexts">
-        ${relationOutputContextBlock("Relation context", row.context, "No explicit context attached to this relation.")}
-        ${relationOutputContextBlock("Event taxon/tissue", row.event_taxon_tissue_context, "No taxon or tissue context propagated from event membership.")}
-        ${relationOutputContextBlock("Entity-linked taxon/tissue", row.entity_linked_taxon_tissue_context, "No taxon or tissue context inferred from linked entity relations.")}
-        ${relationOutputContextBlock("Agreement", row.overlap_taxon_tissue_context, "No overlap between the event and entity-linked methods.")}
-      </div>
-      <div class="relation-normalized-row">
-        <span>Ontology-normalized relation</span>
-        <code>${esc(row.normalized_relation || "-")}</code>
-      </div>
-    </article>
+    <div class="clean-table-wrap">
+      <table class="clean-relation-output-table">
+        <colgroup>
+          <col class="col-query">
+          <col class="col-relation">
+          <col class="col-attribute">
+          <col class="col-context">
+          <col class="col-context">
+          <col class="col-context">
+          <col class="col-context">
+          <col class="col-normalized">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Query</th>
+            <th>Relation</th>
+            <th>Attribute</th>
+            <th>Relation context</th>
+            <th>Event taxon/tissue</th>
+            <th>Entity-linked taxon/tissue</th>
+            <th>Agreement</th>
+            <th>Ontology-normalized relation</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(relationExtractionResultRow).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function relationExtractionResultRow(row) {
+  return `
+    <tr>
+      <td><strong class="relation-table-query">${esc(row.query_name || "-")}</strong></td>
+      <td>${relationExtractionRelationButton(row)}</td>
+      <td><span class="attribute-type-pill">${esc(row.attribute_type || "-")}</span></td>
+      <td>${relationOutputContextCell(row.context, "No explicit relation context.")}</td>
+      <td>${relationOutputContextCell(row.event_taxon_tissue_context, "No event-propagated taxon/tissue context.")}</td>
+      <td>${relationOutputContextCell(row.entity_linked_taxon_tissue_context, "No entity-linked taxon/tissue context.")}</td>
+      <td>${relationOutputContextCell(row.overlap_taxon_tissue_context, "No context overlap.")}</td>
+      <td><code class="normalized-relation-code">${esc(row.normalized_relation || "-")}</code></td>
+    </tr>
   `;
 }
 
@@ -4780,13 +4799,12 @@ function relationExtractionRelationButton(row) {
   `;
 }
 
-function relationOutputContextBlock(title, value, emptyText) {
+function relationOutputContextCell(value, emptyText) {
   const items = splitRelationOutputItems(value);
   return `
-    <div class="relation-context-block ${items.length ? "" : "empty"}">
-      <span>${esc(title)}</span>
+    <div class="relation-table-context ${items.length ? "" : "empty"}">
       ${items.length
-        ? `<div>${items.map(relationOutputChip).join("")}</div>`
+        ? items.map(relationOutputChip).join("")
         : `<small>${esc(emptyText)}</small>`}
     </div>
   `;
