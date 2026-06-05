@@ -246,6 +246,48 @@ function entityName(entity) {
   return entity.canonical_form || entity.normalized_label || entity.node_id;
 }
 
+function contextEntityMergeKey(entity) {
+  if (!entity) return "";
+  const ids = entityOntologyIds(entity).map((id) => String(id || "").trim().toLowerCase()).filter(Boolean).sort();
+  if (!ids.length) return `node:${String(entity.node_id || "").toLowerCase()}`;
+  return ids.length === 1 ? `ontology:${ids[0]}` : `ontology-set:${ids.join("|")}`;
+}
+
+function contextEntityMemberIds(entity) {
+  return uniqueStrings([entity?.node_id, ...asArray(entity?.merged_node_ids)]).filter(Boolean);
+}
+
+function mergeContextEntitiesByOntology(entities) {
+  const groups = new Map();
+  asArray(entities).filter(Boolean).forEach((entity) => {
+    const key = contextEntityMergeKey(entity);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entity);
+  });
+  return Array.from(groups.values()).map((items) => {
+    const uniqueItems = uniqueBy(items, (entity) => entity.node_id);
+    if (uniqueItems.length === 1) return uniqueItems[0];
+    const representative = uniqueItems[0];
+    const aliases = uniqueStrings(uniqueItems.flatMap((entity) => [
+      entityName(entity),
+      entity.canonical_form,
+      entity.normalized_label,
+      entity.selected_label,
+      ...asArray(entity.aliases)
+    ])).filter(Boolean);
+    return {
+      ...representative,
+      canonical_form: entityName(representative),
+      aliases,
+      ontology_ids: uniqueStrings(uniqueItems.flatMap(entityOntologyIds)),
+      selected_ontology_ids: uniqueStrings(uniqueItems.flatMap((entity) => asArray(entity.selected_ontology_ids))),
+      merged_node_ids: uniqueStrings(uniqueItems.map((entity) => entity.node_id)),
+      context_merge_count: uniqueItems.length
+    };
+  });
+}
+
 function entitySearchText(entity) {
   return [
     entity.node_id,
@@ -2384,6 +2426,8 @@ function eventParticipantGroups(event) {
         groups.other.push(entity);
       }
     });
+  const directContextKeys = new Set(groups.direct.map(contextEntityMergeKey).filter(Boolean));
+  groups.context = mergeContextEntitiesByOntology(groups.context.filter((entity) => !directContextKeys.has(contextEntityMergeKey(entity))));
   return groups;
 }
 
@@ -2503,16 +2547,18 @@ function openParticipantGroupModal(eventId, groupKey) {
 
 function participantDetailCard(entity, groupKey) {
   const ontologyIds = entityOntologyIds(entity);
+  const mergeCount = Number(entity.context_merge_count || 0);
   return `
     <article class="participant-detail-card ${esc(groupKey)}-entity" style="--entity-color:${colorForEntity(entity.entity_type)}">
       <div class="participant-detail-main">
         <span class="dot"></span>
         <div>
           <strong>${esc(entityName(entity))}</strong>
-          <span>${esc([clean(entity.entity_type), entity.normalized_label || entity.selected_label].filter(Boolean).join(" | "))}</span>
+          <span>${esc([clean(entity.entity_type), entity.normalized_label || entity.selected_label, mergeCount > 1 ? `${fmt(mergeCount)} merged labels` : ""].filter(Boolean).join(" | "))}</span>
         </div>
       </div>
       ${ontologyIds.length ? `<div class="participant-detail-ids">${badges(ontologyIds, "ontology", 3)}</div>` : ""}
+      ${mergeCount > 1 ? `<div class="participant-detail-ids">${badges(asArray(entity.aliases), "", 6)}</div>` : ""}
       <div class="click-row">
         <button class="mini-button" type="button" data-action="open-entity" data-id="${esc(entity.node_id)}">Details</button>
         <button class="mini-button" type="button" data-action="path-start" data-id="${esc(entity.node_id)}">Route start</button>
@@ -2525,12 +2571,13 @@ function participantDetailCard(entity, groupKey) {
 function entityMiniChip(entity, role = "direct") {
   const secondary = entityVisualDescriptor(entity);
   const label = entityName(entity);
+  const mergeCount = Number(entity.context_merge_count || 0);
   return `
     <button class="mini-entity-chip ${esc(role)}-entity" type="button" data-action="open-entity" data-id="${esc(entity.node_id)}" style="--entity-color:${colorForEntity(entity.entity_type)}" title="${esc(`${label}${secondary ? ` - ${secondary}` : ""}`)}">
       <span class="dot"></span>
       <span>
-        <strong>${esc(label)}</strong>
-        <small>${esc(secondary)}</small>
+        <strong>${esc(label)}${mergeCount > 1 ? ` +${fmt(mergeCount - 1)}` : ""}</strong>
+        <small>${esc([secondary, mergeCount > 1 ? `${fmt(mergeCount)} merged labels` : ""].filter(Boolean).join(" | "))}</small>
       </span>
     </button>
   `;
@@ -2569,14 +2616,17 @@ function rawRelationContextEntities(rel) {
 }
 
 function relationContextSets(rel) {
-  const local = relationContextEntities(rel);
-  const assigned = rawRelationContextEntities(rel);
-  const localIds = new Set(local.map((entity) => entity.node_id));
-  const broader = assigned.filter((entity) => !localIds.has(entity.node_id));
+  const localRaw = relationContextEntities(rel);
+  const assignedRaw = rawRelationContextEntities(rel);
+  const localKeys = new Set(localRaw.map(contextEntityMergeKey).filter(Boolean));
+  const localGroupRaw = assignedRaw.filter((entity) => localKeys.has(contextEntityMergeKey(entity)));
+  const broaderRaw = assignedRaw.filter((entity) => !localKeys.has(contextEntityMergeKey(entity)));
+  const local = mergeContextEntitiesByOntology(localGroupRaw);
+  const broader = mergeContextEntitiesByOntology(broaderRaw);
   return {
     local,
     broader,
-    assigned: uniqueBy([...local, ...broader], (entity) => entity.node_id)
+    assigned: uniqueBy([...local, ...broader], contextEntityMergeKey)
   };
 }
 
@@ -2665,10 +2715,18 @@ function relationContextRow(rel, options = {}) {
 }
 
 function relationContextEntityChip(entity) {
+  const mergeCount = Number(entity?.context_merge_count || 0);
+  const titleParts = [
+    entityName(entity),
+    mergeCount > 1 ? `${fmt(mergeCount)} merged context entities` : "",
+    entityOntologyIds(entity).join(", "),
+    mergeCount > 1 ? asArray(entity.aliases).slice(0, 8).join(", ") : ""
+  ].filter(Boolean);
   return `
-    <button class="context-assignment-chip" type="button" data-action="open-entity" data-id="${esc(entity.node_id)}" style="--entity-color:${colorForEntity(entity.entity_type)}">
+    <button class="context-assignment-chip" type="button" data-action="open-entity" data-id="${esc(entity.node_id)}" style="--entity-color:${colorForEntity(entity.entity_type)}" title="${esc(titleParts.join(" | "))}">
       <span class="dot"></span>
       ${esc(shortText(entityName(entity), 28))}
+      ${mergeCount > 1 ? `<span class="merge-count">+${fmt(mergeCount - 1)}</span>` : ""}
     </button>
   `;
 }
@@ -3009,15 +3067,14 @@ function entityChip(entity, fallbackLabel, fallbackType) {
 }
 
 function contextChips(rel) {
-  const ids = asArray(rel.context_node_ids).filter(Boolean);
-  if (!ids.length) return "";
+  const entities = mergeContextEntitiesByOntology(rawRelationContextEntities(rel));
+  if (!entities.length) return "";
   return `
     <div class="list-meta">
       <span class="badge">context</span>
-      ${ids.map((id) => {
-        const entity = state.indexes.entityById.get(id);
-        if (!entity) return `<span class="badge">${esc(shortId(id))}</span>`;
-        return `<button class="mini-button" type="button" data-action="open-entity" data-id="${esc(id)}">${esc(entityName(entity))}</button>`;
+      ${entities.map((entity) => {
+        const mergeCount = Number(entity.context_merge_count || 0);
+        return `<button class="mini-button" type="button" data-action="open-entity" data-id="${esc(entity.node_id)}" title="${esc(entityOntologyIds(entity).join(", "))}">${esc(entityName(entity))}${mergeCount > 1 ? ` +${fmt(mergeCount - 1)}` : ""}</button>`;
       }).join("")}
     </div>
   `;

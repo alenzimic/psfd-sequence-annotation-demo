@@ -2032,6 +2032,17 @@ textarea {
   background: var(--entity-color);
 }
 
+.context-assignment-chip .merge-count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #e9f1ee;
+  color: #536761;
+  font-size: 9px;
+  font-weight: 900;
+  text-align: center;
+}
+
 .relation-context-actions {
   display: flex;
   justify-content: flex-end;
