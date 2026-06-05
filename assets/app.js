@@ -246,15 +246,19 @@ function entityName(entity) {
   return entity.canonical_form || entity.normalized_label || entity.node_id;
 }
 
+function entityStableId(entity) {
+  return entity?.node_id || entity?.id || "";
+}
+
 function contextEntityMergeKey(entity) {
   if (!entity) return "";
   const ids = entityOntologyIds(entity).map((id) => String(id || "").trim().toLowerCase()).filter(Boolean).sort();
-  if (!ids.length) return `node:${String(entity.node_id || "").toLowerCase()}`;
+  if (!ids.length) return `node:${String(entityStableId(entity)).toLowerCase()}`;
   return ids.length === 1 ? `ontology:${ids[0]}` : `ontology-set:${ids.join("|")}`;
 }
 
 function contextEntityMemberIds(entity) {
-  return uniqueStrings([entity?.node_id, ...asArray(entity?.merged_node_ids)]).filter(Boolean);
+  return uniqueStrings([entityStableId(entity), ...asArray(entity?.merged_node_ids)]).filter(Boolean);
 }
 
 function mergeContextEntitiesByOntology(entities) {
@@ -266,7 +270,7 @@ function mergeContextEntitiesByOntology(entities) {
     groups.get(key).push(entity);
   });
   return Array.from(groups.values()).map((items) => {
-    const uniqueItems = uniqueBy(items, (entity) => entity.node_id);
+    const uniqueItems = uniqueBy(items, entityStableId);
     if (uniqueItems.length === 1) return uniqueItems[0];
     const representative = uniqueItems[0];
     const aliases = uniqueStrings(uniqueItems.flatMap((entity) => [
@@ -282,7 +286,7 @@ function mergeContextEntitiesByOntology(entities) {
       aliases,
       ontology_ids: uniqueStrings(uniqueItems.flatMap(entityOntologyIds)),
       selected_ontology_ids: uniqueStrings(uniqueItems.flatMap((entity) => asArray(entity.selected_ontology_ids))),
-      merged_node_ids: uniqueStrings(uniqueItems.map((entity) => entity.node_id)),
+      merged_node_ids: uniqueStrings(uniqueItems.map(entityStableId)),
       context_merge_count: uniqueItems.length
     };
   });
@@ -5519,8 +5523,9 @@ function annotationTraitRows(entity, relations) {
     row.predicates.set(predicate, (row.predicates.get(predicate) || 0) + 1);
     asArray(rel.evidence_sentence_ids).forEach((id) => row.evidence.add(id));
     annotationRelationContextEntities(rel).forEach((context) => {
-      if (!row.contexts.has(context.id)) row.contexts.set(context.id, { ...context, count: 0 });
-      row.contexts.get(context.id).count += 1;
+      const contextKey = context.mergeKey || context.id;
+      if (!row.contexts.has(contextKey)) row.contexts.set(contextKey, { ...context, count: 0 });
+      row.contexts.get(contextKey).count += 1;
     });
   });
   return Array.from(byTrait.values())
@@ -5540,8 +5545,9 @@ function annotationContextRows(relations) {
   const byContext = new Map();
   relations.forEach((rel) => {
     annotationRelationContextEntities(rel).forEach((context) => {
-      if (!byContext.has(context.id)) byContext.set(context.id, { ...context, count: 0 });
-      byContext.get(context.id).count += 1;
+      const contextKey = context.mergeKey || context.id;
+      if (!byContext.has(contextKey)) byContext.set(contextKey, { ...context, count: 0 });
+      byContext.get(contextKey).count += 1;
     });
   });
   return Array.from(byContext.values())
@@ -5571,18 +5577,22 @@ function annotationContextPriority(type) {
 }
 
 function annotationRelationContextEntities(rel) {
-  return asArray(rel.context_entity_ids)
+  return mergeContextEntitiesByOntology(asArray(rel.context_entity_ids)
     .map((id) => state.globalPathIndexes?.entityById?.get(id))
     .filter(Boolean)
-    .filter(isUsefulAnnotationContext)
+    .filter(isUsefulAnnotationContext))
     .map((entity) => ({
-      id: entity.id,
+      id: entityStableId(entity),
+      mergeKey: contextEntityMergeKey(entity),
+      memberIds: contextEntityMemberIds(entity),
       pmcid: entity.pmcid,
       label: pathEntityName(entity),
       type: clean(entity.type || entity.entity_type || "context"),
       ontologyId: annotationOntologyIds(entity)[0] || "",
       ontologyLabel: entity.selected_label || "",
       color: colorForEntity(entity.type || entity.entity_type),
+      mergeCount: Number(entity.context_merge_count || 0),
+      aliases: asArray(entity.aliases),
     }));
 }
 
