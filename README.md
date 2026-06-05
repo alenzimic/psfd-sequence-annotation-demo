@@ -12,6 +12,9 @@ features are tested here.
 - Browser-side approximate protein FASTA similarity search against PSFD-linked
   UniProt sequences. The static sequence index is built from normalized
   gene/protein ontology IDs/accessions in PSFD.
+- FASTA demo buttons include an exact PSFD sequence match and a non-identical
+  HSP70-like query derived from a PSFD-linked sequence to demonstrate homolog
+  matching behavior for novel sequences.
 - Compound-name relationship extraction from the PSFD relation graph. Only
   triples where the submitted compound is entity 1 or entity 2 are exported.
 - Attribute filters for genes, metabolites, pathways, tissues, species, traits,

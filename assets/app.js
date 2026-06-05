@@ -3970,7 +3970,8 @@ function renderDiscoverWorkbench() {
         </div>
         <div class="annotation-examples sequence-examples">
           <button class="annotation-example" type="button" data-sequence-example="compound">Compound example</button>
-          <button class="annotation-example" type="button" data-sequence-example="fasta">FASTA example</button>
+          <button class="annotation-example" type="button" data-sequence-example="exact-fasta">Exact FASTA</button>
+          <button class="annotation-example" type="button" data-sequence-example="homolog-fasta">Homolog FASTA</button>
           <button class="annotation-example" type="button" data-sequence-example="mixed">Mixed example</button>
         </div>
         <div class="annotation-actions">
@@ -4302,25 +4303,33 @@ async function setRelationExtractionExample(kind) {
   if (kind === "compound") {
     state.relationCompoundInput = "piperonylic acid\nGABA\nABA";
     state.relationFastaInput = "";
-  } else if (kind === "fasta") {
-    const record = sequenceExampleRecord();
+  } else if (kind === "fasta" || kind === "exact-fasta") {
+    const record = sequenceExampleRecord("exact");
     state.relationCompoundInput = "";
-    state.relationFastaInput = record ? `>${record.entities?.[0]?.label || record.accession}|${record.accession}\n${wrapSequence(record.sequence)}` : "";
+    state.relationFastaInput = record ? `>${sequenceRecordLabel(record)}|${record.accession}|exact_psfd_match\n${wrapSequence(record.sequence)}` : "";
+  } else if (kind === "homolog-fasta") {
+    const record = sequenceExampleRecord("homolog");
+    state.relationCompoundInput = "";
+    state.relationFastaInput = record ? `>novel_${sequenceRecordLabel(record)}_like_query|derived_from_${record.accession}|non_exact_demo\n${wrapSequence(homologLikeSequence(record.sequence))}` : "";
   } else {
-    const record = sequenceExampleRecord();
+    const record = sequenceExampleRecord("homolog");
     state.relationCompoundInput = "piperonylic acid\nGABA";
-    state.relationFastaInput = record ? `>${record.entities?.[0]?.label || record.accession}|${record.accession}\n${wrapSequence(record.sequence)}` : "";
+    state.relationFastaInput = record ? `>novel_${sequenceRecordLabel(record)}_like_query|derived_from_${record.accession}|non_exact_demo\n${wrapSequence(homologLikeSequence(record.sequence))}` : "";
   }
   state.relationExtractionResults = [];
   state.relationSequenceMatches = [];
-  state.relationExtractionStatus = kind === "fasta"
-    ? "Loaded an OsMYB55 FASTA example from the PSFD-linked sequence database. Click Extract relationships to see matched gene relations."
+  state.relationExtractionStatus = kind === "fasta" || kind === "exact-fasta"
+    ? "Loaded an exact OsMYB55 FASTA record from the PSFD-linked sequence database."
+    : kind === "homolog-fasta"
+      ? "Loaded a non-identical HSP70-like FASTA query derived from a PSFD-linked sequence to demonstrate homolog matching."
     : "Example loaded. Click Extract relationships to retrieve endpoint triples from the PSFD data.";
   render();
 }
 
-function sequenceExampleRecord() {
-  const preferences = [/osmyb55/i, /atwrky33/i, /\bwrky\b/i, /hsp70/i, /\bmyb/i];
+function sequenceExampleRecord(mode = "exact") {
+  const preferences = mode === "homolog"
+    ? [/^hsp70$/i, /plastid hsp70/i, /hsp70/i, /atwrky33/i, /\bwrky\b/i]
+    : [/osmyb55/i, /atwrky33/i, /\bwrky\b/i, /hsp70/i, /\bmyb/i];
   for (const pattern of preferences) {
     const match = state.sequenceIndex?.records?.find((record) =>
       asArray(record.entities).some((entity) => pattern.test(entity.label || ""))
@@ -4328,6 +4337,24 @@ function sequenceExampleRecord() {
     if (match) return match;
   }
   return state.sequenceIndex?.records?.[0] || null;
+}
+
+function sequenceRecordLabel(record) {
+  return clean(asArray(record?.entities)[0]?.label || record?.accession || "PSFD_sequence").replace(/\s+/g, "_");
+}
+
+function homologLikeSequence(sequence) {
+  const cleanSeq = cleanProteinSequence(sequence);
+  if (cleanSeq.length < 80) return cleanSeq;
+  const replacements = {
+    A: "S", C: "S", D: "E", E: "D", F: "Y", G: "A", H: "N", I: "V", K: "R", L: "I",
+    M: "L", N: "Q", P: "A", Q: "N", R: "K", S: "T", T: "S", V: "I", W: "F", Y: "F",
+  };
+  const trimmed = cleanSeq.slice(12, cleanSeq.length - 8).split("");
+  for (let index = 8; index < trimmed.length; index += 19) {
+    trimmed[index] = replacements[trimmed[index]] || trimmed[index];
+  }
+  return trimmed.join("");
 }
 
 function wrapSequence(sequence, width = 70) {
