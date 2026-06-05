@@ -3127,6 +3127,18 @@ function relationTaxonTissueDisplay(rel, key) {
   return clean(display || relationTaxonTissueContext(rel)?.[key]?.display || "");
 }
 
+function relationTaxonTissueOverlapDisplay(rel) {
+  const eventItems = relationTaxonTissueDisplayItems(rel, "event");
+  const entityLinkedKeys = new Set(relationTaxonTissueDisplayItems(rel, "entity_linked")
+    .map(taxonTissueComparableKey)
+    .filter(Boolean));
+  const overlap = uniqueBy(
+    eventItems.filter((item) => entityLinkedKeys.has(taxonTissueComparableKey(item))),
+    taxonTissueComparableKey
+  );
+  return clean(formatTaxonTissueDisplay(overlap));
+}
+
 function taxonTissueContextBlock(rel, options = {}) {
   const compact = Boolean(options.compact);
   const eventContext = relationTaxonTissueDisplay(rel, "event");
@@ -4567,6 +4579,7 @@ function renderRelationExtractionResults() {
           <strong>context</strong>
           <strong>event_taxon_tissue_context</strong>
           <strong>entity_linked_taxon_tissue_context</strong>
+          <strong>overlap_taxon_tissue_context</strong>
           <strong>attribute_type</strong>
           <strong>ontology_normalized_relation</strong>
         </div>
@@ -4579,6 +4592,7 @@ function renderRelationExtractionResults() {
                 <th>Context</th>
                 <th>event_taxon_tissue_context</th>
                 <th>entity_linked_taxon_tissue_context</th>
+                <th>overlap_taxon_tissue_context</th>
                 <th>attribute_type</th>
                 <th>ontology_normalized_relation</th>
               </tr>
@@ -4591,6 +4605,7 @@ function renderRelationExtractionResults() {
                   <td>${esc(row.context || "-")}</td>
                   <td>${esc(row.event_taxon_tissue_context || "-")}</td>
                   <td>${esc(row.entity_linked_taxon_tissue_context || "-")}</td>
+                  <td>${esc(row.overlap_taxon_tissue_context || "-")}</td>
                   <td>${esc(row.attribute_type)}</td>
                   <td>${esc(row.normalized_relation)}</td>
                 </tr>
@@ -4793,6 +4808,7 @@ function relationExtractionRow(queryName, queryEntity, rel) {
   const contexts = annotationRelationContextEntities(rel).map((item) => `${item.label}${item.ontologyId ? ` (${item.ontologyId})` : ""}`);
   const eventTaxonTissueContext = relationTaxonTissueDisplay(rel, "event");
   const entityLinkedTaxonTissueContext = relationTaxonTissueDisplay(rel, "entity_linked");
+  const overlapTaxonTissueContext = relationTaxonTissueOverlapDisplay(rel);
   return {
     query_name: pathEntityName(queryEntity) || queryName,
     pmcid: rel.pmcid || "",
@@ -4803,6 +4819,7 @@ function relationExtractionRow(queryName, queryEntity, rel) {
     context: uniqueStrings(contexts).join("; "),
     event_taxon_tissue_context: eventTaxonTissueContext,
     entity_linked_taxon_tissue_context: entityLinkedTaxonTissueContext,
+    overlap_taxon_tissue_context: overlapTaxonTissueContext,
     attribute_type: attribute.label,
     normalized_relation: `${normalizedEntityForRelation(subject)} ${predicate} ${normalizedEntityForRelation(object)}`,
   };
@@ -4909,6 +4926,7 @@ function exportRelationExtractionTable() {
     "context",
     "event_taxon_tissue_context",
     "entity_linked_taxon_tissue_context",
+    "overlap_taxon_tissue_context",
     "attribute_type",
     "ontology_normalized_relation",
   ];
@@ -4918,6 +4936,7 @@ function exportRelationExtractionTable() {
     row.context,
     row.event_taxon_tissue_context,
     row.entity_linked_taxon_tissue_context,
+    row.overlap_taxon_tissue_context,
     row.attribute_type,
     row.normalized_relation,
   ]);
