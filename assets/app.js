@@ -4698,49 +4698,15 @@ function renderRelationExtractionResults() {
       ` : ""}
       <section class="relation-output-table">
         <div class="annotation-section-head">
-          <h5>Output</h5>
+          <div>
+            <h5>Relationship results</h5>
+            <small>Readable preview. The download keeps the exact tab-delimited columns.</small>
+          </div>
           <span>${fmt(state.relationExtractionResults.length)} row${state.relationExtractionResults.length === 1 ? "" : "s"}</span>
         </div>
-        <div class="download-schema">
-          <span>Columns</span>
-          <strong>compound_or_gene_name</strong>
-          <strong>relation</strong>
-          <strong>context</strong>
-          <strong>event_taxon_tissue_context</strong>
-          <strong>entity_linked_taxon_tissue_context</strong>
-          <strong>overlap_taxon_tissue_context</strong>
-          <strong>attribute_type</strong>
-          <strong>ontology_normalized_relation</strong>
-        </div>
-        <div class="table-scroll">
-          <table class="attribute-output-table">
-            <thead>
-              <tr>
-                <th>compound_or_gene_name</th>
-                <th>Relation</th>
-                <th>Context</th>
-                <th>event_taxon_tissue_context</th>
-                <th>entity_linked_taxon_tissue_context</th>
-                <th>overlap_taxon_tissue_context</th>
-                <th>attribute_type</th>
-                <th>ontology_normalized_relation</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.map((row) => `
-                <tr>
-                  <td>${esc(row.query_name)}</td>
-                  <td>${relationExtractionRelationCell(row)}</td>
-                  <td>${esc(row.context || "-")}</td>
-                  <td>${esc(row.event_taxon_tissue_context || "-")}</td>
-                  <td>${esc(row.entity_linked_taxon_tissue_context || "-")}</td>
-                  <td>${esc(row.overlap_taxon_tissue_context || "-")}</td>
-                  <td>${esc(row.attribute_type)}</td>
-                  <td>${esc(row.normalized_relation)}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
+        ${relationDownloadSchema()}
+        <div class="relation-result-list">
+          ${rows.map(relationExtractionResultCard).join("")}
         </div>
         ${state.relationExtractionResults.length > rows.length ? `<p class="muted tiny">Showing first ${fmt(rows.length)} rows. The download includes all rows.</p>` : ""}
       </section>
@@ -4748,13 +4714,94 @@ function renderRelationExtractionResults() {
   `;
 }
 
-function relationExtractionRelationCell(row) {
+function relationDownloadSchema() {
+  const columns = [
+    ["compound_or_gene_name", "Query entity"],
+    ["relation", "Extracted relation"],
+    ["context", "Relation context"],
+    ["event_taxon_tissue_context", "Event context"],
+    ["entity_linked_taxon_tissue_context", "Entity-linked context"],
+    ["overlap_taxon_tissue_context", "Context agreement"],
+    ["attribute_type", "Attribute type"],
+    ["ontology_normalized_relation", "Ontology-normalized relation"],
+  ];
+  return `
+    <details class="download-schema-details">
+      <summary>
+        <span>Download format</span>
+        <small>${fmt(columns.length)} tab-delimited columns</small>
+      </summary>
+      <div class="download-schema-grid">
+        ${columns.map(([raw, label]) => `
+          <div class="download-column-card">
+            <strong>${esc(label)}</strong>
+            <code>${esc(raw)}</code>
+          </div>
+        `).join("")}
+      </div>
+    </details>
+  `;
+}
+
+function relationExtractionResultCard(row) {
+  return `
+    <article class="relation-result-card">
+      <div class="relation-result-primary">
+        <div class="relation-result-query">
+          <span>Query</span>
+          <strong>${esc(row.query_name || "-")}</strong>
+        </div>
+        ${relationExtractionRelationButton(row)}
+        <div class="relation-result-attribute">
+          <span>Attribute</span>
+          <strong>${esc(row.attribute_type || "-")}</strong>
+        </div>
+      </div>
+      <div class="relation-result-contexts">
+        ${relationOutputContextBlock("Relation context", row.context, "No explicit context attached to this relation.")}
+        ${relationOutputContextBlock("Event taxon/tissue", row.event_taxon_tissue_context, "No taxon or tissue context propagated from event membership.")}
+        ${relationOutputContextBlock("Entity-linked taxon/tissue", row.entity_linked_taxon_tissue_context, "No taxon or tissue context inferred from linked entity relations.")}
+        ${relationOutputContextBlock("Agreement", row.overlap_taxon_tissue_context, "No overlap between the event and entity-linked methods.")}
+      </div>
+      <div class="relation-normalized-row">
+        <span>Ontology-normalized relation</span>
+        <code>${esc(row.normalized_relation || "-")}</code>
+      </div>
+    </article>
+  `;
+}
+
+function relationExtractionRelationButton(row) {
   return `
     <button class="relation-output-link" type="button" data-action="select-global" data-kind="relation" data-id="${esc(row.relation_id)}" data-pmcid="${esc(row.pmcid || "")}">
       <span>${esc(row.relation)}</span>
       <small>${esc([row.pmcid, "open triple"].filter(Boolean).join(" | "))}</small>
     </button>
   `;
+}
+
+function relationOutputContextBlock(title, value, emptyText) {
+  const items = splitRelationOutputItems(value);
+  return `
+    <div class="relation-context-block ${items.length ? "" : "empty"}">
+      <span>${esc(title)}</span>
+      ${items.length
+        ? `<div>${items.map(relationOutputChip).join("")}</div>`
+        : `<small>${esc(emptyText)}</small>`}
+    </div>
+  `;
+}
+
+function splitRelationOutputItems(value) {
+  return uniqueStrings(String(value || "")
+    .split(/\s*;\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean));
+}
+
+function relationOutputChip(item) {
+  const contextOnly = item.includes("*");
+  return `<span class="relation-output-chip ${contextOnly ? "context-only" : ""}" title="${contextOnly ? "Added from broader context only" : ""}">${esc(item)}</span>`;
 }
 
 function sequenceMatchCard(match) {
