@@ -5142,7 +5142,7 @@ body[data-tab="discover"] .main-panel {
 
 .clean-table-wrap {
   overflow: auto;
-  border: 1px solid #d8e5e0;
+  border: 1px solid #dde8e3;
   border-radius: 9px;
   background: #fff;
 }
@@ -5177,16 +5177,10 @@ body[data-tab="discover"] .main-panel {
 
 .clean-relation-output-table th,
 .clean-relation-output-table td {
-  padding: 10px;
-  border-bottom: 1px solid #edf3f1;
-  border-right: 1px solid #f0f5f3;
+  padding: 12px 11px;
+  border-bottom: 1px solid #e9f0ed;
   text-align: left;
   vertical-align: top;
-}
-
-.clean-relation-output-table th:last-child,
-.clean-relation-output-table td:last-child {
-  border-right: 0;
 }
 
 .clean-relation-output-table tr:last-child td {
@@ -5197,7 +5191,8 @@ body[data-tab="discover"] .main-panel {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f3f8f6;
+  border-bottom-color: #d8e5df;
+  background: #f7fbf9;
   color: #2c4039;
   font-size: 10.5px;
   font-weight: 900;
@@ -5210,12 +5205,15 @@ body[data-tab="discover"] .main-panel {
   background: #fff;
 }
 
-.clean-relation-output-table tbody tr:nth-child(even) {
-  background: #fbfdfc;
-}
-
 .clean-relation-output-table tbody tr:hover {
   background: #f4faf7;
+}
+
+.clean-relation-output-table .relation-output-link {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .relation-table-query {
