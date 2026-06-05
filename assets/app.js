@@ -926,6 +926,40 @@ function formatTaxonTissueDisplay(items) {
   })).join("; ");
 }
 
+function taxonTissueComparableKey(item) {
+  if (!item) return "";
+  const kind = String(item.kind || "").toLowerCase();
+  const id = String(item.ontology_id || item.entity_id || item.label || "").trim().toLowerCase();
+  return kind && id ? `${kind}|${id}` : "";
+}
+
+function relationTaxonTissueBaselineKeys(rel) {
+  const context = relationTaxonTissueContext(rel);
+  return new Set([
+    ...asArray(context.direct?.taxa),
+    ...asArray(context.direct?.tissues),
+    ...asArray(context.event?.taxa),
+    ...asArray(context.event?.tissues)
+  ].map(taxonTissueComparableKey).filter(Boolean));
+}
+
+function relationTaxonTissueDisplayItems(rel, key) {
+  const context = relationTaxonTissueContext(rel);
+  const group = context?.[key] || {};
+  const baselineKeys = key === "entity_linked" ? relationTaxonTissueBaselineKeys(rel) : new Set();
+  return [...asArray(group.taxa), ...asArray(group.tissues)].map((item) => {
+    if (key !== "entity_linked") return { ...item, mark: "" };
+    const method = String(item.method || "");
+    const isContextOnlyPropagation = method === "entity_linked_direct_context";
+    const isTriplePropagation = method === "entity_linked_location_relation";
+    const isAlreadyAssignedFromTripleOrEvent = baselineKeys.has(taxonTissueComparableKey(item));
+    return {
+      ...item,
+      mark: isContextOnlyPropagation && !isTriplePropagation && !isAlreadyAssignedFromTripleOrEvent ? "*" : ""
+    };
+  });
+}
+
 function uniqueBy(items, keyFn) {
   const seen = new Set();
   return items.filter((item) => {
@@ -3089,7 +3123,8 @@ function relationTaxonTissueContext(rel) {
 }
 
 function relationTaxonTissueDisplay(rel, key) {
-  return clean(relationTaxonTissueContext(rel)?.[key]?.display || "");
+  const display = formatTaxonTissueDisplay(relationTaxonTissueDisplayItems(rel, key));
+  return clean(display || relationTaxonTissueContext(rel)?.[key]?.display || "");
 }
 
 function taxonTissueContextBlock(rel, options = {}) {
