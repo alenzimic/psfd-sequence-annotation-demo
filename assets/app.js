@@ -73,6 +73,7 @@ const state = {
   globalPathIndexes: null,
   globalPathLoading: false,
   globalPathPromise: null,
+  returnStack: [],
   indexes: null
 };
 
@@ -395,6 +396,89 @@ function installGlobalHandlers() {
   }, true);
 }
 
+function captureViewState() {
+  return {
+    paper: state.paper,
+    tab: state.tab,
+    selectedKind: state.selectedKind,
+    selectedId: state.selectedId,
+    query: state.query,
+    includeAccepted: state.includeAccepted,
+    includeReview: state.includeReview,
+    includeRejected: state.includeRejected,
+    showSharedContext: state.showSharedContext,
+    orphanOnly: state.orphanOnly,
+    entityScope: state.entityScope,
+    entityType: state.entityType,
+    relationClass: state.relationClass,
+    normalizedOnly: state.normalizedOnly,
+    listPage: state.listPage
+  };
+}
+
+function pushReturnState() {
+  const view = captureViewState();
+  if (!view.paper && !view.tab) return;
+  const last = state.returnStack[state.returnStack.length - 1];
+  if (last && sameViewState(last, view)) return;
+  state.returnStack.push(view);
+  if (state.returnStack.length > 30) state.returnStack.shift();
+}
+
+function sameViewState(a, b) {
+  return [
+    "paper",
+    "tab",
+    "selectedKind",
+    "selectedId",
+    "query",
+    "entityScope",
+    "entityType",
+    "relationClass",
+    "listPage"
+  ].every((key) => String(a?.[key] ?? "") === String(b?.[key] ?? ""));
+}
+
+async function restoreReturnState() {
+  const view = state.returnStack.pop();
+  if (!view) return;
+  if (view.paper && view.paper !== state.paper) {
+    await loadPaper(view.paper, { preservePath: true, skipRender: true });
+  }
+  applyViewState(view);
+  render();
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => els.mainPanel?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }
+}
+
+function applyViewState(view) {
+  [
+    "tab",
+    "selectedKind",
+    "selectedId",
+    "query",
+    "includeAccepted",
+    "includeReview",
+    "includeRejected",
+    "showSharedContext",
+    "orphanOnly",
+    "entityScope",
+    "entityType",
+    "relationClass",
+    "normalizedOnly",
+    "listPage"
+  ].forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(view, key)) state[key] = view[key];
+  });
+  if (els.searchInput) els.searchInput.value = state.query || "";
+}
+
+function returnControl() {
+  if (!state.returnStack.length) return "";
+  return `<button class="return-button" type="button" data-action="return-view">Return</button>`;
+}
+
 function annotationControlSelector() {
   return "[data-annotation-action], [data-annotation-example], [data-annotation-select-match], [data-annotation-tab], [data-annotation-search], [data-relation-extract-action], [data-sequence-example]";
 }
@@ -470,6 +554,9 @@ function runAnnotationControlAction(target) {
 
 function runButtonAction(action, id, actionTarget) {
   switch (action) {
+    case "return-view":
+      restoreReturnState().catch(reportButtonActionError);
+      return true;
     case "select-dependency":
       navigateLocalItem("dependency", id);
       return true;
@@ -818,7 +905,7 @@ async function loadPaper(pmcid, options = {}) {
   }
   state.listPage = 0;
   els.paperSelect.value = pmcid;
-  render();
+  if (!options.skipRender) render();
 }
 
 function buildIndexes(data) {
@@ -1207,8 +1294,9 @@ function selectItem(kind, id, doRender = true) {
   if (doRender) render();
 }
 
-function navigateLocalItem(kind, id, doRender = true) {
+function navigateLocalItem(kind, id, doRender = true, options = {}) {
   if (!kind || !id) return;
+  if (!options.skipReturn && doRender) pushReturnState();
   const tab = tabForKind(kind);
   if (tab) state.tab = tab;
   clearBrowserSearch();
@@ -1645,6 +1733,7 @@ function renderDependencyMain(dep) {
   if (!dep) return;
   els.mainPanel.innerHTML = `
     <section class="hero-card">
+      ${returnControl()}
       <div class="hero-title">
         <div>
           <h2>${esc(state.data.pmcid)} dependency ${esc(shortId(dep.dependency_id))}</h2>
@@ -2258,7 +2347,7 @@ function eventParticipantGroups(event) {
   const directIds = new Set();
   const contextIds = new Set();
   relations.forEach((rel) => {
-    [rel.subject_node_id, rel.object_node_id].filter(Boolean).forEach((id) => directIds.add(id));
+    [...relationLocalSubjectIds(rel), ...relationLocalObjectIds(rel)].filter(Boolean).forEach((id) => directIds.add(id));
     asArray(rel.context_node_ids).filter(Boolean).forEach((id) => contextIds.add(id));
   });
 
@@ -2479,6 +2568,41 @@ function rawRelationContextEntities(rel) {
     .filter(Boolean);
 }
 
+function relationContextSets(rel) {
+  const local = relationContextEntities(rel);
+  const assigned = rawRelationContextEntities(rel);
+  const localIds = new Set(local.map((entity) => entity.node_id));
+  const broader = assigned.filter((entity) => !localIds.has(entity.node_id));
+  return {
+    local,
+    broader,
+    assigned: uniqueBy([...local, ...broader], (entity) => entity.node_id)
+  };
+}
+
+function contextChipLine(label, entities, options = {}) {
+  const limit = options.limit ?? entities.length;
+  const shown = entities.slice(0, limit);
+  const hidden = Math.max(0, entities.length - shown.length);
+  if (!shown.length && !options.emptyText) return "";
+  return `
+    <div class="relation-context-assignment ${options.compact ? "compact" : ""} ${options.focus ? "focus" : ""}">
+      <span class="assignment-label">${esc(label)}</span>
+      ${shown.length ? shown.map(relationContextEntityChip).join("") : `<span class="muted tiny">${esc(options.emptyText || "No context entities.")}</span>`}
+      ${hidden ? `<span class="badge compact-count">+${fmt(hidden)}</span>` : ""}
+    </div>
+  `;
+}
+
+function compactContextChipLine(label, entities, limit) {
+  const shown = entities.slice(0, limit);
+  if (!shown.length) return "";
+  return `
+    <span class="context-strip-label">${esc(label)}</span>
+    ${shown.map(relationContextEntityChip).join("")}
+  `;
+}
+
 function relationContextMatchesEvidence(entity, evidenceText) {
   const evidence = String(evidenceText || "").trim();
   if (!entity || !evidence) return false;
@@ -2494,12 +2618,14 @@ function relationContextRow(rel, options = {}) {
   const object = state.indexes.entityById.get(rel.object_node_id);
   const subjectLabel = subject ? entityName(subject) : rel.subject || "subject";
   const objectLabel = object ? entityName(object) : rel.object || "object";
-  const contexts = rawRelationContextEntities(rel);
+  const contextSets = relationContextSets(rel);
   const active = rel.record_id === (options.activeId || state.focusedRelationId);
-  const visibleContexts = contexts.slice(0, options.compact ? 4 : 8);
   const eventId = options.eventId || asArray(rel.event_ids)[0] || "";
   if (options.compact) {
-    const compactContexts = contexts.slice(0, 3);
+    const localLimit = contextSets.local.length ? 2 : 0;
+    const broaderLimit = Math.max(1, 3 - localLimit);
+    const shownCount = Math.min(contextSets.local.length, localLimit) + Math.min(contextSets.broader.length, broaderLimit);
+    const totalCount = contextSets.assigned.length;
     return `
       <article class="relation-context-row compact ${active ? "active" : ""}" data-relation-context-id="${esc(rel.record_id)}" data-relation-event-id="${esc(eventId)}">
         <button class="relation-context-main compact-main" type="button" data-action="focus-relation-context" data-id="${esc(rel.record_id)}">
@@ -2510,8 +2636,9 @@ function relationContextRow(rel, options = {}) {
         ${relationProvenancePills(rel, { compact: true })}
         <div class="compact-relation-meta">
           <div class="compact-context-strip">
-            ${compactContexts.length ? `<span class="context-strip-label">context</span>${compactContexts.map(relationContextEntityChip).join("")}` : ""}
-            ${contexts.length > compactContexts.length ? `<span class="badge compact-count">+${fmt(contexts.length - compactContexts.length)}</span>` : ""}
+            ${compactContextChipLine("local", contextSets.local, localLimit)}
+            ${compactContextChipLine("broader", contextSets.broader, broaderLimit)}
+            ${totalCount > shownCount ? `<span class="badge compact-count">+${fmt(totalCount - shownCount)}</span>` : ""}
           </div>
           <button class="mini-button ghost-open" type="button" data-action="select-relation" data-id="${esc(rel.record_id)}">Details</button>
         </div>
@@ -2526,10 +2653,9 @@ function relationContextRow(rel, options = {}) {
         <span>${esc(shortText(objectLabel, options.compact ? 22 : 34))}</span>
       </button>
       ${relationProvenancePills(rel, { compact: true })}
-      <div class="relation-context-assignment">
-        <span class="assignment-label">context</span>
-        ${visibleContexts.length ? visibleContexts.map(relationContextEntityChip).join("") : `<span class="muted tiny">no context entities</span>`}
-        ${contexts.length > visibleContexts.length ? `<span class="badge">+${fmt(contexts.length - visibleContexts.length)}</span>` : ""}
+      <div class="relation-context-stack">
+        ${contextChipLine("local context", contextSets.local, { emptyText: contextSets.assigned.length ? "No assigned context appears in the evidence sentence." : "No context entities assigned.", limit: 8 })}
+        ${contextChipLine("broader context", contextSets.broader, { emptyText: "", limit: 8 })}
       </div>
       <div class="relation-context-actions">
         <button class="mini-button" type="button" data-action="select-relation" data-id="${esc(rel.record_id)}">Open</button>
@@ -2560,8 +2686,7 @@ function eventRelationContextPanel(event, relations, options = {}) {
 }
 
 function relationContextFocusContent(rel, options = {}) {
-  const contexts = relationContextEntities(rel);
-  const rawContexts = rawRelationContextEntities(rel);
+  const contextSets = relationContextSets(rel);
   const sentence = relationEvidenceSentence(rel);
   const compact = Boolean(options.compact);
   if (compact) {
@@ -2573,12 +2698,12 @@ function relationContextFocusContent(rel, options = {}) {
         </div>
         <button class="mini-button ghost-open" type="button" data-action="select-relation" data-id="${esc(rel.record_id)}">Details</button>
       </div>
-      <div class="relation-context-assignment focus compact">
-        <span class="assignment-label">Sentence-local context</span>
-        ${contexts.length ? contexts.map(relationContextEntityChip).join("") : `<span class="muted tiny">${rawContexts.length ? "Broader event context exists, but none matched this relation sentence." : "No context entities were assigned to this relation."}</span>`}
+      <div class="relation-context-stack">
+        ${contextChipLine("local", contextSets.local, { compact: true, focus: true, emptyText: contextSets.assigned.length ? "No assigned context appears in this sentence." : "No context assigned.", limit: 5 })}
+        ${contextChipLine("broader", contextSets.broader, { compact: true, focus: true, limit: 5 })}
       </div>
       <div class="highlighted-sentence compact">
-        ${sentence.text ? highlightRelationSentence(sentence.text, rel, contexts) : `<span class="muted">No core evidence sentence is available for this relation.</span>`}
+        ${sentence.text ? highlightRelationSentence(sentence.text, rel, contextSets.local) : `<span class="muted">No core evidence sentence is available for this relation.</span>`}
       </div>
     `;
   }
@@ -2595,12 +2720,12 @@ function relationContextFocusContent(rel, options = {}) {
       <strong>${esc(clean(rel.predicate || rel.predicate_class || "relation"))}</strong>
       <span>${esc(rel.object || "object")}</span>
     </div>
-    <div class="relation-context-assignment focus ${compact ? "compact" : ""}">
-      <span class="assignment-label">assigned context</span>
-      ${contexts.length ? contexts.map(relationContextEntityChip).join("") : `<span class="muted tiny">No context entities were assigned to this triple.</span>`}
+    <div class="relation-context-stack">
+      ${contextChipLine("local context", contextSets.local, { focus: true, emptyText: contextSets.assigned.length ? "No assigned context appears in the evidence sentence." : "No context entities were assigned to this triple.", limit: 10 })}
+      ${contextChipLine("broader assigned context", contextSets.broader, { focus: true, limit: 12 })}
     </div>
     <div class="highlighted-sentence ${compact ? "compact" : ""}">
-      ${sentence.text ? highlightRelationSentence(sentence.text, rel, contexts) : `<span class="muted">No core evidence sentence is available for this triple.</span>`}
+      ${sentence.text ? highlightRelationSentence(sentence.text, rel, contextSets.local) : `<span class="muted">No core evidence sentence is available for this triple.</span>`}
     </div>
     ${!options.compact ? neighboringContextDisclosure(rel, "Neighboring event context") : ""}
   `;
@@ -2989,6 +3114,7 @@ function renderEventMain(event) {
   const focused = focusedRelationForEvent(relations);
   els.mainPanel.innerHTML = `
     <section class="hero-card">
+      ${returnControl()}
       <div class="hero-title">
         <div>
           <h2>${esc(event.event_label || event.event_id)}</h2>
@@ -3126,6 +3252,7 @@ function renderRelationMain(rel) {
   const eventIds = asArray(rel.event_ids);
   els.mainPanel.innerHTML = `
     <section class="hero-card">
+      ${returnControl()}
       <div class="hero-title">
         <div>
           <h2>${esc(rel.triple || rel.record_id)}</h2>
@@ -3171,8 +3298,7 @@ function relationEventMembershipCard(eventId) {
 
 function relationEvidence(rel) {
   const sentences = rel.evidence_sentence_ids || [];
-  const localContexts = relationContextEntities(rel);
-  const rawContexts = rawRelationContextEntities(rel);
+  const contextSets = relationContextSets(rel);
   const evidence = relationEvidenceSentence(rel);
   return `
     <div class="two-col">
@@ -3185,15 +3311,15 @@ function relationEvidence(rel) {
         <div class="key">Evaluation</div><div>${badges([rel.relation_evaluation_verdict, rel.relation_evaluation_status].filter(Boolean))}</div>
         <div class="key">Context source</div><div>${esc(rel.context_enrichment_source || "-")}</div>
         <div class="key">Context enriched</div><div>${esc(String(rel.context_enriched))}</div>
-        <div class="key">Sentence-local context</div><div>${localContexts.length ? localContexts.map(relationContextEntityChip).join("") : `<span class="muted">No context matched the relation evidence sentence.</span>`}</div>
-        <div class="key">Broader extracted context</div><div>${rawContexts.length ? rawContexts.map(relationContextEntityChip).join("") : `<span class="muted">-</span>`}</div>
+        <div class="key">Sentence-local context</div><div>${contextSets.local.length ? contextSets.local.map(relationContextEntityChip).join("") : `<span class="muted">${contextSets.assigned.length ? "No assigned context appears in the relation evidence sentence." : "No context entities assigned."}</span>`}</div>
+        <div class="key">Broader assigned context</div><div>${contextSets.broader.length ? contextSets.broader.map(relationContextEntityChip).join("") : `<span class="muted">-</span>`}</div>
         <div class="key">Event taxon/tissue</div><div>${relationTaxonTissueDisplay(rel, "event") ? esc(relationTaxonTissueDisplay(rel, "event")) : `<span class="muted">-</span>`}</div>
         <div class="key">Entity-linked taxon/tissue</div><div>${relationTaxonTissueDisplay(rel, "entity_linked") ? esc(relationTaxonTissueDisplay(rel, "entity_linked")) : `<span class="muted">-</span>`}</div>
       </div>
       <div class="evidence-block">
         <strong>Evidence Sentence</strong>
         ${taxonTissueContextBlock(rel)}
-        ${evidence.text ? `<p>${highlightRelationSentence(evidence.text, rel, localContexts)}</p>` : sentences.length ? sentences.map((id) => `<p>${esc(sentenceText(id))}</p>`).join("") : `<span class="muted">No evidence sentence IDs.</span>`}
+        ${evidence.text ? `<p>${highlightRelationSentence(evidence.text, rel, contextSets.local)}</p>` : sentences.length ? sentences.map((id) => `<p>${esc(sentenceText(id))}</p>`).join("") : `<span class="muted">No evidence sentence IDs.</span>`}
         ${neighboringContextDisclosure(rel, "Neighboring context")}
       </div>
     </div>
@@ -3244,6 +3370,7 @@ function renderEntityMain(entity) {
   const events = state.indexes.eventsByEntity.get(entity.node_id) || [];
   els.mainPanel.innerHTML = `
     <section class="hero-card">
+      ${returnControl()}
       <div class="hero-title">
         <div>
           <h2>${esc(entityName(entity))}</h2>
@@ -6813,6 +6940,7 @@ function renderPathExplorer() {
   const stats = state.globalPathIndex.stats;
   els.mainPanel.innerHTML = `
     <section class="hero-card pathfinder-hero">
+      ${returnControl()}
       <div class="hero-title">
         <div>
           <h2>Pathfinder</h2>
@@ -6950,6 +7078,7 @@ async function setPathEndpoint(which, id) {
   await loadGlobalPathIndex();
   const entity = pathEntityById(id) || state.indexes.entityById.get(id);
   if (!entity) return;
+  pushReturnState();
   if (which === "start") {
     state.pathStartId = id;
     state.pathStart = formatPathInput(entity, id);
@@ -7419,15 +7548,16 @@ function globalEntitySearchText(entity) {
 
 async function selectGlobalItem(kind, id, pmcid) {
   if (!kind || !id) return;
+  pushReturnState();
   closeEntityModal();
   if (pmcid && pmcid !== state.paper) {
-    await loadPaper(pmcid, { preservePath: true });
+    await loadPaper(pmcid, { preservePath: true, skipRender: true });
   }
   if (kind === "entity") state.entityScope = "paper";
   if (!localObjectExists(kind, id)) {
     throw new Error(`${clean(kind)} ${shortId(id)} was not found in ${pmcid || state.paper}.`);
   }
-  navigateLocalItem(kind, id);
+  navigateLocalItem(kind, id, true, { skipReturn: true });
 }
 
 function localObjectExists(kind, id) {

@@ -578,6 +578,27 @@ textarea {
   line-height: 1.35;
 }
 
+.return-button {
+  justify-self: start;
+  width: fit-content;
+  min-height: 28px;
+  padding: 5px 10px;
+  border: 1px solid #c8d8d3;
+  border-radius: 999px;
+  background: #f6fbf8;
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.return-button:hover,
+.return-button:focus-visible {
+  border-color: #8eb5aa;
+  background: #eaf5ef;
+  outline: none;
+}
+
 .relation-list {
   display: grid;
   gap: 8px;
@@ -1898,6 +1919,12 @@ textarea {
   overflow: hidden;
 }
 
+.relation-context-stack {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
 .context-strip-label {
   flex: 0 0 auto;
   color: #778882;
@@ -1955,6 +1982,10 @@ textarea {
   border: 1px dashed #d6e2dd;
   border-radius: 8px;
   background: #fbfdfc;
+}
+
+.relation-context-assignment.compact {
+  padding: 4px 5px;
 }
 
 .relation-context-assignment.focus {
