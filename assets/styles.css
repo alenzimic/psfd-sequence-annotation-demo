@@ -596,6 +596,56 @@ textarea {
   align-items: center;
 }
 
+.taxon-tissue-context {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px dashed #d6e4df;
+  border-radius: 8px;
+  background: #f8fbfa;
+}
+
+.taxon-tissue-context.compact {
+  margin: 7px 0 0;
+  padding: 6px 7px;
+}
+
+.taxon-tissue-line {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.taxon-tissue-context.compact .taxon-tissue-line {
+  grid-template-columns: 118px minmax(0, 1fr);
+}
+
+.taxon-tissue-line span {
+  color: #687872;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.taxon-tissue-line strong {
+  min-width: 0;
+  color: #263b35;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.taxon-tissue-context small {
+  color: #6c7b76;
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
 .predicate {
   min-height: 42px;
   display: grid;
@@ -4886,7 +4936,7 @@ body[data-tab="discover"] .main-panel {
 
 .attribute-output-table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1340px;
   border-collapse: collapse;
   font-size: 12px;
 }

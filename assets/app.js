@@ -2605,6 +2605,7 @@ function renderRelationCard(rel) {
         ${entityChip(object, rel.object, rel.object_type)}
       </div>
       ${contextChips(rel)}
+      ${taxonTissueContextBlock(rel, { compact: true })}
     </article>
   `;
 }
@@ -2660,6 +2661,35 @@ function contextChips(rel) {
         if (!entity) return `<span class="badge">${esc(shortId(id))}</span>`;
         return `<button class="mini-button" type="button" data-action="open-entity" data-id="${esc(id)}">${esc(entityName(entity))}</button>`;
       }).join("")}
+    </div>
+  `;
+}
+
+function relationTaxonTissueContext(rel) {
+  return rel?.taxon_tissue_context || {};
+}
+
+function relationTaxonTissueDisplay(rel, key) {
+  return clean(relationTaxonTissueContext(rel)?.[key]?.display || "");
+}
+
+function taxonTissueContextBlock(rel, options = {}) {
+  const compact = Boolean(options.compact);
+  const eventContext = relationTaxonTissueDisplay(rel, "event");
+  const entityLinkedContext = relationTaxonTissueDisplay(rel, "entity_linked");
+  if (!eventContext && !entityLinkedContext) return "";
+  const maxLen = compact ? 110 : 1000;
+  const line = (label, value, className) => value ? `
+    <div class="taxon-tissue-line ${className}">
+      <span>${esc(label)}</span>
+      <strong title="${esc(value)}">${esc(shortText(value, maxLen))}</strong>
+    </div>
+  ` : "";
+  return `
+    <div class="taxon-tissue-context ${compact ? "compact" : ""}">
+      ${line("Event taxon/tissue", eventContext, "event-context")}
+      ${line("Entity-linked taxon/tissue", entityLinkedContext, "entity-linked-context")}
+      ${entityLinkedContext ? `<small>* indicates context propagated through another relation containing the same endpoint entity.</small>` : ""}
     </div>
   `;
 }
@@ -2900,9 +2930,12 @@ function relationEvidence(rel) {
         <div class="key">Context enriched</div><div>${esc(String(rel.context_enriched))}</div>
         <div class="key">Sentence-local context</div><div>${localContexts.length ? localContexts.map(relationContextEntityChip).join("") : `<span class="muted">No context matched the relation evidence sentence.</span>`}</div>
         <div class="key">Broader extracted context</div><div>${rawContexts.length ? rawContexts.map(relationContextEntityChip).join("") : `<span class="muted">-</span>`}</div>
+        <div class="key">Event taxon/tissue</div><div>${relationTaxonTissueDisplay(rel, "event") ? esc(relationTaxonTissueDisplay(rel, "event")) : `<span class="muted">-</span>`}</div>
+        <div class="key">Entity-linked taxon/tissue</div><div>${relationTaxonTissueDisplay(rel, "entity_linked") ? esc(relationTaxonTissueDisplay(rel, "entity_linked")) : `<span class="muted">-</span>`}</div>
       </div>
       <div class="evidence-block">
         <strong>Evidence Sentence</strong>
+        ${taxonTissueContextBlock(rel)}
         ${evidence.text ? `<p>${highlightRelationSentence(evidence.text, rel, localContexts)}</p>` : sentences.length ? sentences.map((id) => `<p>${esc(sentenceText(id))}</p>`).join("") : `<span class="muted">No evidence sentence IDs.</span>`}
         ${neighboringContextDisclosure(rel, "Neighboring context")}
       </div>
@@ -4052,6 +4085,8 @@ function renderRelationExtractionResults() {
           <strong>compound_or_gene_name</strong>
           <strong>relation</strong>
           <strong>context</strong>
+          <strong>event_taxon_tissue_context</strong>
+          <strong>entity_linked_taxon_tissue_context</strong>
           <strong>attribute_type</strong>
           <strong>ontology_normalized_relation</strong>
         </div>
@@ -4062,6 +4097,8 @@ function renderRelationExtractionResults() {
                 <th>compound_or_gene_name</th>
                 <th>Relation</th>
                 <th>Context</th>
+                <th>event_taxon_tissue_context</th>
+                <th>entity_linked_taxon_tissue_context</th>
                 <th>attribute_type</th>
                 <th>ontology_normalized_relation</th>
               </tr>
@@ -4072,6 +4109,8 @@ function renderRelationExtractionResults() {
                   <td>${esc(row.query_name)}</td>
                   <td>${esc(row.relation)}</td>
                   <td>${esc(row.context || "-")}</td>
+                  <td>${esc(row.event_taxon_tissue_context || "-")}</td>
+                  <td>${esc(row.entity_linked_taxon_tissue_context || "-")}</td>
                   <td>${esc(row.attribute_type)}</td>
                   <td>${esc(row.normalized_relation)}</td>
                 </tr>
@@ -4261,6 +4300,8 @@ function relationExtractionRow(queryName, queryEntity, rel) {
   if (!attribute || !state.relationAttributeFilters[attribute.key]) return null;
   const predicate = clean(rel.predicate || rel.predicate_class || "relates to");
   const contexts = annotationRelationContextEntities(rel).map((item) => `${item.label}${item.ontologyId ? ` (${item.ontologyId})` : ""}`);
+  const eventTaxonTissueContext = relationTaxonTissueDisplay(rel, "event");
+  const entityLinkedTaxonTissueContext = relationTaxonTissueDisplay(rel, "entity_linked");
   return {
     query_name: pathEntityName(queryEntity) || queryName,
     relation_id: rel.id,
@@ -4268,6 +4309,8 @@ function relationExtractionRow(queryName, queryEntity, rel) {
     attribute_key: attribute.key,
     relation: `${pathEntityName(subject)} ${predicate} ${pathEntityName(object)}`,
     context: uniqueStrings(contexts).join("; "),
+    event_taxon_tissue_context: eventTaxonTissueContext,
+    entity_linked_taxon_tissue_context: entityLinkedTaxonTissueContext,
     attribute_type: attribute.label,
     normalized_relation: `${normalizedEntityForRelation(subject)} ${predicate} ${normalizedEntityForRelation(object)}`,
   };
@@ -4368,11 +4411,21 @@ function wrapSequence(sequence, width = 70) {
 
 function exportRelationExtractionTable() {
   if (!state.relationExtractionResults.length) return;
-  const header = ["compound_or_gene_name", "relation", "context", "attribute_type", "ontology_normalized_relation"];
+  const header = [
+    "compound_or_gene_name",
+    "relation",
+    "context",
+    "event_taxon_tissue_context",
+    "entity_linked_taxon_tissue_context",
+    "attribute_type",
+    "ontology_normalized_relation",
+  ];
   const rows = state.relationExtractionResults.map((row) => [
     row.query_name,
     row.relation,
     row.context,
+    row.event_taxon_tissue_context,
+    row.entity_linked_taxon_tissue_context,
     row.attribute_type,
     row.normalized_relation,
   ]);
