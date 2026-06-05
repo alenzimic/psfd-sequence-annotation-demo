@@ -10,8 +10,10 @@ features are tested here.
 
 - Existing PSFD annotation and evidence browser copied from the stable demo.
 - Browser-side approximate protein FASTA similarity search against PSFD-linked
-  UniProt sequences.
-- Compound-name relationship extraction from the PSFD relation graph.
+  UniProt sequences. The static sequence index is built from normalized
+  gene/protein ontology IDs/accessions in PSFD.
+- Compound-name relationship extraction from the PSFD relation graph. Only
+  triples where the submitted compound is entity 1 or entity 2 are exported.
 - Attribute filters for genes, metabolites, pathways, tissues, species, traits,
   molecular traits, and experimental conditions.
 - Tab-delimited relationship export with these columns:

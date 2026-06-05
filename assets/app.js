@@ -3936,8 +3936,8 @@ function renderDiscoverWorkbench() {
         <div class="annotation-panel-head">
           <span>04</span>
           <div>
-            <h3>Sequence and compound relation extraction</h3>
-            <small>Browser-side approximate FASTA matching against ${fmt(sequenceStats.record_count || 0)} PSFD protein sequences, plus compound-name lookup.</small>
+            <h3>Compound and FASTA relationship extraction</h3>
+            <small>Retrieves endpoint triples from the bundled PSFD data file. FASTA queries use browser-side approximate matching against ${fmt(sequenceStats.record_count || 0)} PSFD-linked protein sequences.</small>
           </div>
         </div>
         <div class="dual-query-grid">
@@ -3953,8 +3953,8 @@ function renderDiscoverWorkbench() {
         </div>
         <div class="attribute-filter-panel">
           <div>
-            <h4>Choose attributes to extract for the submitted entities</h4>
-            <small>Rows are exported as query, relation, context, attribute type, and ontology-normalized relation.</small>
+            <h4>Choose PSFD attributes to extract for the submitted entities</h4>
+            <small>Only triples where the submitted compound or matched protein is entity 1 or entity 2 are exported.</small>
           </div>
           <div class="attribute-grid">
             ${relationAttributeCheckbox("genes", "Genes")}
@@ -4048,21 +4048,21 @@ function renderRelationExtractionResults() {
         </div>
         <div class="download-schema">
           <span>Columns</span>
-          <strong>compound/gene</strong>
+          <strong>compound_or_gene_name</strong>
           <strong>relation</strong>
           <strong>context</strong>
-          <strong>attribute type</strong>
-          <strong>ontology-normalized relation</strong>
+          <strong>attribute_type</strong>
+          <strong>ontology_normalized_relation</strong>
         </div>
         <div class="table-scroll">
           <table class="attribute-output-table">
             <thead>
               <tr>
-                <th>Compound/gene</th>
+                <th>compound_or_gene_name</th>
                 <th>Relation</th>
                 <th>Context</th>
-                <th>Attribute type</th>
-                <th>Ontology-normalized relation</th>
+                <th>attribute_type</th>
+                <th>ontology_normalized_relation</th>
               </tr>
             </thead>
             <tbody>
@@ -4313,14 +4313,21 @@ async function setRelationExtractionExample(kind) {
   }
   state.relationExtractionResults = [];
   state.relationSequenceMatches = [];
-  state.relationExtractionStatus = "";
+  state.relationExtractionStatus = kind === "fasta"
+    ? "Loaded an OsMYB55 FASTA example from the PSFD-linked sequence database. Click Extract relationships to see matched gene relations."
+    : "Example loaded. Click Extract relationships to retrieve endpoint triples from the PSFD data.";
   render();
 }
 
 function sequenceExampleRecord() {
-  return state.sequenceIndex?.records?.find((record) =>
-    asArray(record.entities).some((entity) => /wrky|hsp|apx|myb/i.test(entity.label || ""))
-  ) || state.sequenceIndex?.records?.[0] || null;
+  const preferences = [/osmyb55/i, /atwrky33/i, /\bwrky\b/i, /hsp70/i, /\bmyb/i];
+  for (const pattern of preferences) {
+    const match = state.sequenceIndex?.records?.find((record) =>
+      asArray(record.entities).some((entity) => pattern.test(entity.label || ""))
+    );
+    if (match) return match;
+  }
+  return state.sequenceIndex?.records?.[0] || null;
 }
 
 function wrapSequence(sequence, width = 70) {
