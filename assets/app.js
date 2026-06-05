@@ -590,9 +590,222 @@ async function fetchJson(path) {
   return response.json();
 }
 
+function normalizePaperRelations(data) {
+  const entityById = new Map(asArray(data.entities).map((item) => [item.node_id, item]));
+  const relations = mergeDuplicateRelations(asArray(data.relations), {
+    entityById,
+    idKey: "record_id",
+    subjectKey: "subject_node_id",
+    objectKey: "object_node_id",
+    contextKey: "context_node_ids",
+    eventKey: "event_ids",
+    pmcid: data.pmcid || data.article?.pmcid || ""
+  });
+  return {
+    ...data,
+    relations,
+    stats: {
+      ...(data.stats || {}),
+      raw_relations: asArray(data.relations).length,
+      relations: relations.length,
+      merged_duplicate_relations: Math.max(0, asArray(data.relations).length - relations.length)
+    }
+  };
+}
+
+function normalizeGlobalRelations(payload) {
+  const entityById = new Map(asArray(payload.entities).map((item) => [item.id, item]));
+  const relations = mergeDuplicateRelations(asArray(payload.relations), {
+    entityById,
+    idKey: "id",
+    subjectKey: "subject_entity_id",
+    objectKey: "object_entity_id",
+    contextKey: "context_entity_ids",
+    eventKey: "event_ids",
+    global: true
+  });
+  return {
+    ...payload,
+    relations,
+    stats: {
+      ...(payload.stats || {}),
+      raw_relations: asArray(payload.relations).length,
+      relations: relations.length,
+      merged_duplicate_relations: Math.max(0, asArray(payload.relations).length - relations.length)
+    }
+  };
+}
+
+function mergeDuplicateRelations(relations, options) {
+  const keyToGroup = new Map();
+  const groups = [];
+
+  relations.forEach((rel) => {
+    const keys = relationMergeKeys(rel, options);
+    const matchedGroups = uniqueBy(keys.map((key) => keyToGroup.get(key)).filter(Boolean), (group) => group.uid);
+    let group = matchedGroups[0];
+    if (!group) {
+      group = { uid: `group.${groups.length + 1}`, keys: new Set(), relations: [], mergedInto: null };
+      groups.push(group);
+    }
+    matchedGroups.slice(1).forEach((other) => {
+      if (other === group || other.mergedInto) return;
+      other.relations.forEach((item) => group.relations.push(item));
+      other.keys.forEach((key) => {
+        group.keys.add(key);
+        keyToGroup.set(key, group);
+      });
+      other.mergedInto = group;
+    });
+    keys.forEach((key) => {
+      group.keys.add(key);
+      keyToGroup.set(key, group);
+    });
+    group.relations.push(rel);
+  });
+
+  return groups
+    .filter((group) => !group.mergedInto)
+    .map((group) => mergeRelationGroup(group.relations, options));
+}
+
+function relationMergeKeys(rel, options) {
+  const keys = [];
+  const pmcid = rel.pmcid || options.pmcid || "";
+  const predicate = normalizeMergeText(rel.predicate || rel.predicate_class || "");
+  const exactTriple = normalizeMergeText(rel.triple || `${rel.subject || ""} ${rel.predicate || ""} ${rel.object || ""}`);
+  if (exactTriple) keys.push(`exact|${pmcid}|${exactTriple}`);
+  const subjectKey = relationEndpointOntologyKey(rel, options.subjectKey, options.entityById);
+  const objectKey = relationEndpointOntologyKey(rel, options.objectKey, options.entityById);
+  if (predicate && subjectKey && objectKey) {
+    keys.push(`ontology|${pmcid}|${predicate}|${subjectKey}|${objectKey}`);
+  }
+  return keys.length ? keys : [`id|${pmcid}|${relationIdValue(rel, options)}`];
+}
+
+function relationEndpointOntologyKey(rel, field, entityById) {
+  const id = rel[field];
+  const entity = entityById.get(id);
+  const ids = entity ? entityOntologyIds(entity) : [];
+  if (!ids.length) return "";
+  return ids.map((value) => String(value).trim()).filter(Boolean).sort().join("|");
+}
+
+function normalizeMergeText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function relationIdValue(rel, options) {
+  return rel[options.idKey] || rel.record_id || rel.id || "";
+}
+
+function mergeRelationGroup(groupRelations, options) {
+  const primary = { ...groupRelations[0] };
+  const idKey = options.idKey;
+  const subjectIdsKey = options.global ? "subject_entity_ids" : "subject_node_ids";
+  const objectIdsKey = options.global ? "object_entity_ids" : "object_node_ids";
+  const contextKey = options.contextKey;
+  const eventKey = options.eventKey;
+  const mergedIds = uniqueStrings(groupRelations.map((rel) => relationIdValue(rel, options)));
+
+  primary.merged_relation_ids = mergedIds;
+  primary.duplicate_count = mergedIds.length;
+  primary[idKey] = relationIdValue(primary, options) || mergedIds[0];
+  primary.source_relation_ids = uniqueStrings(groupRelations.flatMap((rel) => asArray(rel.source_relation_ids).concat(asArray(rel.source_relation_id))));
+  primary[subjectIdsKey] = uniqueStrings(groupRelations.flatMap((rel) => asArray(rel[subjectIdsKey]).concat(asArray(rel[options.subjectKey]))));
+  primary[objectIdsKey] = uniqueStrings(groupRelations.flatMap((rel) => asArray(rel[objectIdsKey]).concat(asArray(rel[options.objectKey]))));
+  primary[contextKey] = uniqueStrings(groupRelations.flatMap((rel) => asArray(rel[contextKey])));
+  primary[eventKey] = uniqueStrings(groupRelations.flatMap((rel) => asArray(rel[eventKey])));
+  primary.evidence_sentence_ids = uniqueStrings(groupRelations.flatMap((rel) => asArray(rel.evidence_sentence_ids)));
+  primary.evidence = mergeObjectArray(groupRelations.flatMap((rel) => asArray(rel.evidence)), (row) => row?.sentence_id || row?.text || JSON.stringify(row || {}));
+  primary.evidence_context_sentences = mergeObjectArray(groupRelations.flatMap((rel) => asArray(rel.evidence_context_sentences)), (row) => row?.id || row?.text || JSON.stringify(row || {}));
+  primary.context = mergeRelationContextObjects(groupRelations.map((rel) => rel.context));
+  primary.taxon_tissue_context = mergeTaxonTissueContexts(groupRelations.map((rel) => rel.taxon_tissue_context));
+  primary.relation_event_membership_count = primary[eventKey].length;
+  primary.evidence_context_text = uniqueStrings(groupRelations.map((rel) => rel.evidence_context_text).filter(Boolean)).join(" ");
+  primary.evidence_preview = uniqueStrings(groupRelations.map((rel) => rel.evidence_preview).filter(Boolean))[0] || primary.evidence_preview || "";
+  if (mergedIds.length > 1) {
+    primary.merge_summary = `${mergedIds.length} duplicate relation records merged`;
+  }
+  return primary;
+}
+
+function mergeRelationContextObjects(contexts) {
+  const merged = {};
+  contexts.filter(Boolean).forEach((context) => {
+    Object.entries(context).forEach(([key, value]) => {
+      merged[key] = uniqueStrings([...(merged[key] || []), ...asArray(value)]);
+    });
+  });
+  return merged;
+}
+
+function mergeObjectArray(items, keyFn) {
+  const seen = new Set();
+  const merged = [];
+  items.filter(Boolean).forEach((item) => {
+    const key = String(keyFn(item) || "");
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    merged.push(item);
+  });
+  return merged;
+}
+
+function mergeTaxonTissueContexts(contexts) {
+  const merged = {};
+  ["direct", "event", "entity_linked"].forEach((key) => {
+    const taxa = mergeTaxonTissueItems(contexts.flatMap((context) => asArray(context?.[key]?.taxa)));
+    const tissues = mergeTaxonTissueItems(contexts.flatMap((context) => asArray(context?.[key]?.tissues)));
+    const provenanceCount = contexts.reduce((sum, context) => sum + Number(context?.[key]?.provenance_count || 0), 0);
+    merged[key] = {
+      display: formatTaxonTissueDisplay([...taxa, ...tissues]),
+      taxa,
+      tissues,
+      provenance_count: provenanceCount || taxa.length + tissues.length
+    };
+  });
+  return merged;
+}
+
+function mergeTaxonTissueItems(items) {
+  const byKey = new Map();
+  items.filter(Boolean).forEach((item) => {
+    const key = `${item.kind || ""}|${item.entity_id || item.ontology_id || item.label || ""}`;
+    if (!key.trim()) return;
+    if (!byKey.has(key)) {
+      byKey.set(key, { ...item, provenance_count: Number(item.provenance_count || 0) });
+      return;
+    }
+    const row = byKey.get(key);
+    row.provenance_count = Number(row.provenance_count || 0) + Number(item.provenance_count || 0);
+    if (item.mark === "*") row.mark = "*";
+  });
+  return Array.from(byKey.values()).sort((a, b) => String(a.label || "").localeCompare(String(b.label || "")));
+}
+
+function formatTaxonTissueDisplay(items) {
+  return uniqueStrings(items.map((item) => {
+    const label = item.label || item.entity_id || "";
+    const mark = item.mark || "";
+    const ontology = item.ontology_id ? ` (${item.ontology_id})` : "";
+    return `${label}${mark}${ontology}`.trim();
+  })).join("; ");
+}
+
+function uniqueBy(items, keyFn) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = keyFn(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 async function loadPaper(pmcid, options = {}) {
   state.paper = pmcid;
-  state.data = await fetchJson(`data/papers/${pmcid}.json`);
+  state.data = normalizePaperRelations(await fetchJson(`data/papers/${pmcid}.json`));
   state.indexes = buildIndexes(state.data);
   state.selectedKind = null;
   state.selectedId = null;
@@ -610,7 +823,7 @@ async function loadPaper(pmcid, options = {}) {
 
 function buildIndexes(data) {
   const eventById = new Map(data.events.map((item) => [item.event_id, item]));
-  const relationById = new Map(data.relations.map((item) => [item.record_id, item]));
+  const relationById = new Map();
   const dependencyById = new Map(data.dependencies.map((item) => [item.dependency_id, item]));
   const entityById = new Map(data.entities.map((item) => [item.node_id, item]));
   const sentenceById = new Map(data.sentences.map((item) => [item.id, item]));
@@ -626,8 +839,11 @@ function buildIndexes(data) {
   }
 
   data.relations.forEach((rel) => {
+    [rel.record_id, ...asArray(rel.merged_relation_ids)].forEach((id) => {
+      if (id) relationById.set(id, rel);
+    });
     rel.event_ids.forEach((eventId) => push(relationsByEvent, eventId, rel));
-    [rel.subject_node_id, rel.object_node_id, ...asArray(rel.context_node_ids)].forEach((nodeId) => {
+    [...relationLocalSubjectIds(rel), ...relationLocalObjectIds(rel), ...asArray(rel.context_node_ids)].forEach((nodeId) => {
       push(relationsByEntity, nodeId, rel);
     });
   });
@@ -940,7 +1156,7 @@ function eventText(event) {
 }
 
 function relationText(rel) {
-  const nodes = [rel.subject_node_id, rel.object_node_id, ...asArray(rel.context_node_ids)]
+  const nodes = [...relationLocalSubjectIds(rel), ...relationLocalObjectIds(rel), ...asArray(rel.context_node_ids)]
     .map((id) => state.indexes.entityById.get(id))
     .filter(Boolean)
     .map(entitySearchText)
@@ -1317,6 +1533,22 @@ function relationEndpointPreview(rel) {
   const subjectLabel = shortText(subject ? entityName(subject) : rel.subject, 22);
   const objectLabel = shortText(object ? entityName(object) : rel.object, 22);
   return shortText(`${subjectLabel} -> ${objectLabel}`, 58);
+}
+
+function relationLocalSubjectIds(rel) {
+  return uniqueStrings([...asArray(rel?.subject_node_ids), ...asArray(rel?.subject_node_id)]);
+}
+
+function relationLocalObjectIds(rel) {
+  return uniqueStrings([...asArray(rel?.object_node_ids), ...asArray(rel?.object_node_id)]);
+}
+
+function relationGlobalSubjectIds(rel) {
+  return uniqueStrings([...asArray(rel?.subject_entity_ids), ...asArray(rel?.subject_entity_id)]);
+}
+
+function relationGlobalObjectIds(rel) {
+  return uniqueStrings([...asArray(rel?.object_entity_ids), ...asArray(rel?.object_entity_id)]);
 }
 
 function evidenceCountLabel(ids) {
@@ -1896,6 +2128,7 @@ function relationProvenancePills(rel, options = {}) {
     <div class="claim-provenance ${options.compact ? "compact" : ""}">
       ${provenancePillGroup(relationEvidenceSections(rel), "section", { compact: options.compact, limit: options.compact ? 1 : 3 })}
       ${provenancePillGroup([relationEvidenceMode(rel)], "mode", { compact: options.compact, limit: 1 })}
+      ${Number(rel.duplicate_count || 0) > 1 ? provenancePillGroup([`${fmt(rel.duplicate_count)} merged`], "records", { compact: options.compact, limit: 1 }) : ""}
     </div>
   `;
 }
@@ -2945,6 +3178,7 @@ function relationEvidence(rel) {
     <div class="two-col">
       <div class="kv">
         <div class="key">Source relation</div><div>${esc(rel.source_relation_id || "-")}</div>
+        ${asArray(rel.source_relation_ids).length > 1 ? `<div class="key">Merged sources</div><div>${badges(rel.source_relation_ids, "", 12)}</div>` : ""}
         <div class="key">Passage</div><div>${esc(rel.current_passage_id || "-")}</div>
         <div class="key">Evidence section</div><div>${provenancePillGroup(relationEvidenceSections(rel), "section") || `<span class="muted">-</span>`}</div>
         <div class="key">Assertion mode</div><div>${provenancePillGroup([relationEvidenceMode(rel)], "mode") || `<span class="muted">-</span>`}</div>
@@ -3123,7 +3357,7 @@ function entityDescriptionBlock(entity) {
 
 function entityResearchPanel(entity, relations, events) {
   const neighbors = entityNeighbors(entity, relations).slice(0, 12);
-  const directRelations = relations.filter((rel) => rel.subject_node_id === entity.node_id || rel.object_node_id === entity.node_id).length;
+  const directRelations = relations.filter((rel) => relationLocalSubjectIds(rel).includes(entity.node_id) || relationLocalObjectIds(rel).includes(entity.node_id)).length;
   const contextRelations = Math.max(0, relations.length - directRelations);
   const acceptedDeps = events.reduce((sum, event) => sum + Number(event.dependency_counts?.accepted || 0), 0);
   const normalizedIds = entityOntologyIds(entity);
@@ -3187,8 +3421,8 @@ function entityNeighbors(entity, relations) {
     row.count += 1;
   }
   relations.forEach((rel) => {
-    add(rel.subject_node_id, rel.object_node_id === entity.node_id ? "upstream" : "direct", rel);
-    add(rel.object_node_id, rel.subject_node_id === entity.node_id ? "downstream" : "direct", rel);
+    relationLocalSubjectIds(rel).forEach((nodeId) => add(nodeId, relationLocalObjectIds(rel).includes(entity.node_id) ? "upstream" : "direct", rel));
+    relationLocalObjectIds(rel).forEach((nodeId) => add(nodeId, relationLocalSubjectIds(rel).includes(entity.node_id) ? "downstream" : "direct", rel));
     asArray(rel.context_node_ids).forEach((nodeId) => add(nodeId, "context", rel));
   });
   return Array.from(byId.values())
@@ -4327,7 +4561,9 @@ function relationExtractionRow(queryName, queryEntity, rel) {
   const subject = state.globalPathIndexes?.entityById?.get(rel.subject_entity_id);
   const object = state.globalPathIndexes?.entityById?.get(rel.object_entity_id);
   if (!subject || !object) return null;
-  const other = rel.subject_entity_id === queryEntity.id ? object : subject;
+  const queryIsSubject = relationGlobalSubjectIds(rel).includes(queryEntity.id);
+  const queryIsObject = relationGlobalObjectIds(rel).includes(queryEntity.id);
+  const other = queryIsSubject && !queryIsObject ? object : subject;
   const attribute = relationAttributeCategory(other);
   if (!attribute || !state.relationAttributeFilters[attribute.key]) return null;
   const predicate = clean(rel.predicate || rel.predicate_class || "relates to");
@@ -5167,7 +5403,7 @@ function annotationRelationContextEntities(rel) {
 }
 
 function relationHasEndpoint(rel, entityId) {
-  return rel.subject_entity_id === entityId || rel.object_entity_id === entityId;
+  return relationGlobalSubjectIds(rel).includes(entityId) || relationGlobalObjectIds(rel).includes(entityId);
 }
 
 function isTraitRelation(rel) {
@@ -5271,8 +5507,8 @@ function annotationNeighborRows(entity, relations) {
     if (rel.predicate_class || rel.predicate) row.predicates.add(clean(rel.predicate_class || rel.predicate));
   }
   relations.forEach((rel) => {
-    add(rel.subject_entity_id, rel);
-    add(rel.object_entity_id, rel);
+    relationGlobalSubjectIds(rel).forEach((id) => add(id, rel));
+    relationGlobalObjectIds(rel).forEach((id) => add(id, rel));
     asArray(rel.context_entity_ids).forEach((id) => add(id, rel));
   });
   return Array.from(byId.values())
@@ -6668,8 +6904,9 @@ async function loadGlobalPathIndex() {
   state.globalPathLoading = true;
   state.globalPathPromise = fetchJson("data/global_path_index.json")
     .then((payload) => {
-      state.globalPathIndex = payload;
-      state.globalPathIndexes = buildGlobalPathIndexes(payload);
+      const normalized = normalizeGlobalRelations(payload);
+      state.globalPathIndex = normalized;
+      state.globalPathIndexes = buildGlobalPathIndexes(normalized);
     })
     .finally(() => {
       state.globalPathLoading = false;
@@ -6681,14 +6918,18 @@ async function loadGlobalPathIndex() {
 function buildGlobalPathIndexes(payload) {
   const relationsByEntity = new Map();
   const eventsByEntity = new Map();
+  const relationById = new Map();
   function push(map, key, value) {
     if (!key) return;
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(value);
   }
   payload.relations.forEach((relation) => {
-    push(relationsByEntity, relation.subject_entity_id, relation);
-    push(relationsByEntity, relation.object_entity_id, relation);
+    [relation.id, ...asArray(relation.merged_relation_ids)].forEach((id) => {
+      if (id) relationById.set(id, relation);
+    });
+    relationGlobalSubjectIds(relation).forEach((id) => push(relationsByEntity, id, relation));
+    relationGlobalObjectIds(relation).forEach((id) => push(relationsByEntity, id, relation));
     asArray(relation.context_entity_ids).forEach((id) => push(relationsByEntity, id, relation));
   });
   payload.events.forEach((event) => {
@@ -6698,7 +6939,7 @@ function buildGlobalPathIndexes(payload) {
     entityById: new Map(payload.entities.map((item) => [item.id, item])),
     conceptById: new Map(payload.concepts.map((item) => [item.id, item])),
     eventById: new Map(payload.events.map((item) => [item.id, item])),
-    relationById: new Map(payload.relations.map((item) => [item.id, item])),
+    relationById,
     dependencyById: new Map(payload.dependencies.map((item) => [item.id, item])),
     relationsByEntity,
     eventsByEntity
@@ -6836,21 +7077,26 @@ function buildPathGraph(options = currentPathOptions()) {
       if (options.discoveryMode && (isLowSignalDiscoveryEntity(subjectEntity) || isLowSignalDiscoveryEntity(objectEntity))) {
         return;
       }
-      const sub = rel.subject_entity_id ? `entity:${rel.subject_entity_id}` : "";
-      const obj = rel.object_entity_id ? `entity:${rel.object_entity_id}` : "";
-      addUndirected(sub, obj, {
-        kind: "relation",
-        id: rel.id,
-        pmcid: rel.pmcid,
-        label: rel.predicate || "relation"
+      relationGlobalSubjectIds(rel).forEach((subjectId) => {
+        relationGlobalObjectIds(rel).forEach((objectId) => {
+          const subjectNode = subjectId ? `entity:${subjectId}` : "";
+          const objectNode = objectId ? `entity:${objectId}` : "";
+          addUndirected(subjectNode, objectNode, {
+            kind: "relation",
+            id: rel.id,
+            pmcid: rel.pmcid,
+            label: rel.predicate || "relation"
+          });
+        });
       });
       if (!options.pathUseContext) return;
       asArray(rel.context_entity_ids).forEach((ctx) => {
         const contextEntity = entityById.get(ctx);
         if (options.discoveryMode && isLowSignalDiscoveryEntity(contextEntity)) return;
         const c = `entity:${ctx}`;
-        addUndirected(c, sub, { kind: "context", id: rel.id, pmcid: rel.pmcid, label: "context" });
-        addUndirected(c, obj, { kind: "context", id: rel.id, pmcid: rel.pmcid, label: "context" });
+        [...relationGlobalSubjectIds(rel), ...relationGlobalObjectIds(rel)].forEach((endpointId) => {
+          addUndirected(c, `entity:${endpointId}`, { kind: "context", id: rel.id, pmcid: rel.pmcid, label: "context" });
+        });
       });
     });
   }
