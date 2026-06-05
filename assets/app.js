@@ -2890,6 +2890,7 @@ function dependencyButtons(deps, eventId) {
 
 function renderRelationMain(rel) {
   if (!rel) return;
+  const eventIds = asArray(rel.event_ids);
   els.mainPanel.innerHTML = `
     <section class="hero-card">
       <div class="hero-title">
@@ -2906,10 +2907,32 @@ function renderRelationMain(rel) {
       ${relationEvidence(rel)}
     `, "", true)}
     ${disclosureSection("Event Membership", `
-      <div class="click-row">
-        ${rel.event_ids.map((id) => `<button class="mini-button" type="button" data-action="select-event" data-id="${esc(id)}">${esc(shortId(id))}</button>`).join("") || `<span class="muted">No event membership.</span>`}
+      <div class="event-membership-grid">
+        ${eventIds.map(relationEventMembershipCard).join("") || `<span class="muted">No event membership.</span>`}
       </div>
-    `, fmt(rel.event_ids.length))}
+    `, fmt(eventIds.length))}
+  `;
+}
+
+function relationEventMembershipCard(eventId) {
+  const event = state.indexes?.eventById.get(eventId);
+  if (!event) {
+    return `<button class="event-membership-card missing" type="button" data-action="select-event" data-id="${esc(eventId)}">
+      <strong>${esc(shortId(eventId))}</strong>
+      <span>Event details unavailable in this paper bundle.</span>
+    </button>`;
+  }
+  const acceptedDeps = Number(event.dependency_counts?.accepted || 0);
+  const meta = [
+    clean(event.event_type || "event"),
+    `${fmt(event.relation_count || 0)} triple${Number(event.relation_count || 0) === 1 ? "" : "s"}`,
+    acceptedDeps ? `${fmt(acceptedDeps)} linked dependenc${acceptedDeps === 1 ? "y" : "ies"}` : "no accepted dependency"
+  ];
+  return `
+    <button class="event-membership-card" type="button" data-action="select-event" data-id="${esc(eventId)}">
+      <strong>${esc(shortText(event.event_label || eventId, 118))}</strong>
+      <span>${esc(meta.join(" | "))}</span>
+    </button>
   `;
 }
 
@@ -4107,7 +4130,7 @@ function renderRelationExtractionResults() {
               ${rows.map((row) => `
                 <tr>
                   <td>${esc(row.query_name)}</td>
-                  <td>${esc(row.relation)}</td>
+                  <td>${relationExtractionRelationCell(row)}</td>
                   <td>${esc(row.context || "-")}</td>
                   <td>${esc(row.event_taxon_tissue_context || "-")}</td>
                   <td>${esc(row.entity_linked_taxon_tissue_context || "-")}</td>
@@ -4121,6 +4144,15 @@ function renderRelationExtractionResults() {
         ${state.relationExtractionResults.length > rows.length ? `<p class="muted tiny">Showing first ${fmt(rows.length)} rows. The download includes all rows.</p>` : ""}
       </section>
     </div>
+  `;
+}
+
+function relationExtractionRelationCell(row) {
+  return `
+    <button class="relation-output-link" type="button" data-action="select-global" data-kind="relation" data-id="${esc(row.relation_id)}" data-pmcid="${esc(row.pmcid || "")}">
+      <span>${esc(row.relation)}</span>
+      <small>${esc([row.pmcid, "open triple"].filter(Boolean).join(" | "))}</small>
+    </button>
   `;
 }
 
@@ -4304,6 +4336,7 @@ function relationExtractionRow(queryName, queryEntity, rel) {
   const entityLinkedTaxonTissueContext = relationTaxonTissueDisplay(rel, "entity_linked");
   return {
     query_name: pathEntityName(queryEntity) || queryName,
+    pmcid: rel.pmcid || "",
     relation_id: rel.id,
     attribute_entity_id: other.id,
     attribute_key: attribute.key,

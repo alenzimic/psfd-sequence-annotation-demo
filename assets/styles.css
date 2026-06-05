@@ -2913,6 +2913,51 @@ textarea {
   gap: 6px;
 }
 
+.event-membership-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px;
+}
+
+.event-membership-card {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #d6e3df;
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: #fbfdfc;
+  color: #23352f;
+  text-align: left;
+  cursor: pointer;
+}
+
+.event-membership-card:hover,
+.event-membership-card:focus-visible {
+  border-color: #88b2a8;
+  background: #f0f8f4;
+  outline: none;
+}
+
+.event-membership-card strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #1f312b;
+  font-size: 13px;
+  line-height: 1.28;
+}
+
+.event-membership-card span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.event-membership-card.missing {
+  border-left-color: #9aa3a0;
+}
+
 .mini-status {
   min-height: 28px;
   display: inline-flex;
@@ -4960,6 +5005,46 @@ body[data-tab="discover"] .main-panel {
 .attribute-output-table td {
   color: #263733;
   overflow-wrap: anywhere;
+}
+
+.relation-output-link {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.relation-output-link span {
+  color: var(--accent-dark);
+  font-weight: 850;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.relation-output-link small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.relation-output-link:hover span,
+.relation-output-link:focus-visible span {
+  text-decoration: underline;
+}
+
+.relation-output-link:focus-visible {
+  outline: 2px solid #88b2a8;
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 @media (max-width: 900px) {
