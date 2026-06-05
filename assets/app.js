@@ -3858,10 +3858,10 @@ function compoundClassifierMetadata(entity) {
   const pubchem = compound.pubchem || {};
   const structure = compound.structure || {};
   return `
-    <details class="compound-metadata-details" open>
+    <details class="compound-metadata-details">
       <summary>
-        <span>Full compound classifier metadata</span>
-        <small>Step 930</small>
+        <span>Classifier metadata</span>
+        <small>Step 930 details and exact CSV fields</small>
       </summary>
       <div class="metadata-groups">
         ${metadataGroup("ChEBI / PubChem", [
@@ -3900,20 +3900,129 @@ function compoundClassifierMetadata(entity) {
   `;
 }
 
+const metadataLabelMap = {
+  compound_status: "Compound status",
+  classification_status: "Classification status",
+  chebi_id: "ChEBI ID",
+  chebi_name: "ChEBI name",
+  chebi_formula: "Formula",
+  chebi_inchikey: "InChIKey",
+  pubchem_cid: "PubChem CID",
+  pubchem_link_type: "PubChem link",
+  structure_source: "Structure source",
+  structure_inchikey: "Structure InChIKey",
+  structure_smiles: "SMILES",
+  classyfire_cache_hit: "Cache hit",
+  classyfire_kingdom: "Kingdom",
+  classyfire_superclass: "Superclass",
+  classyfire_class: "Class",
+  classyfire_subclass: "Subclass",
+  classyfire_direct_parent: "Direct parent",
+  npclassifier_applicable: "Applicable",
+  npclassifier_cache_hit: "Cache hit",
+  np_pathway: "Pathway",
+  np_superclass: "Superclass",
+  np_class: "Class",
+  np_is_glycoside: "Glycoside",
+  npclassifier_error: "Error",
+  selected_uniprot_accession: "UniProt accession",
+  selected_uniprot_entry: "UniProt entry",
+  selected_gene_name: "Gene name",
+  selected_protein_name: "Protein name",
+  selected_organism: "Organism",
+  selected_taxon_id: "Taxon ID",
+  selected_taxon_rank: "Taxon rank",
+  reviewed_status: "Reviewed",
+  source_database: "Source",
+  phytozome_code: "Phytozome code",
+  phytozome_gene_id: "Gene model",
+  phytozome_ontology_id: "Ontology ID",
+  phytozome_base_gene_id: "Base gene",
+  phytozome_base_ontology_id: "Base ontology ID",
+  phytozome_browser_name: "Browser name",
+  phytozome_proteome_id: "Proteome ID",
+  report_type: "Report type",
+  sequence_length: "Sequence length",
+  sequence_available: "Sequence available",
+  matched_fasta_id: "Matched FASTA ID",
+  phytozome_search_url: "Search URL",
+  gene_report_url: "Report URL",
+  source_file: "Source file",
+  family_ontology_id: "Ontology ID",
+  family_id: "Family ID",
+  family_database: "Database",
+  family_type: "Type",
+  family_name: "Name",
+  family_alias: "Alias",
+  family_alias_type: "Alias type",
+  linked_interpro_id: "Linked InterPro",
+  linked_pfam_ids: "Linked Pfam",
+  resource_url: "Resource URL",
+  representative_uniprot_accession: "UniProt accession",
+  representative_uniprot_entry: "UniProt entry",
+  representative_organism: "Organism",
+  representative_source_database: "Source",
+  representative_reviewed_status: "Reviewed",
+  representative_basis: "Basis",
+  decision: "Decision",
+  status: "Status",
+  normalization_scope: "Scope",
+  gene_query: "Gene query",
+  gene_query_type: "Query type",
+  lookup_query: "Lookup query",
+  lookup_strategy: "Lookup strategy",
+  match_type: "Match type",
+  candidate_count: "Candidates",
+  ambiguity_reason: "Ambiguity",
+  notes: "Notes"
+};
+
 function metadataGroup(title, rows) {
+  const shownRows = rows
+    .map(([key, value]) => [key, metadataValue(value)])
+    .filter(([, value]) => value);
+  if (!shownRows.length) return "";
   return `
     <section class="metadata-group">
       <h3>${esc(title)}</h3>
       <div class="metadata-table">
-        ${rows.map(([key, value]) => metadataRow(key, value)).join("")}
+        ${shownRows.map(([key, value]) => metadataRow(key, value)).join("")}
       </div>
     </section>
   `;
 }
 
-function metadataRow(key, value) {
-  const shown = value === undefined || value === null || value === "" ? "-" : value;
-  return `<div class="metadata-key">${esc(key)}</div><div class="metadata-value">${esc(shown)}</div>`;
+function metadataValue(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  if (Array.isArray(value)) return value.map(metadataValue).filter(Boolean).join(", ");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value).trim();
+}
+
+function metadataLabel(key, preserveKey = false) {
+  const text = String(key || "").trim();
+  if (preserveKey) return text;
+  return metadataLabelMap[text] || text
+    .replace(/^selected_/, "")
+    .replace(/^representative_/, "representative ")
+    .replace(/^classyfire_/, "")
+    .replace(/^npclassifier_/, "NPClassifier ")
+    .replace(/^np_/, "NP ")
+    .replace(/^chebi_/, "ChEBI ")
+    .replace(/^pubchem_/, "PubChem ")
+    .replace(/^phytozome_/, "Phytozome ")
+    .replaceAll("_", " ");
+}
+
+function metadataRow(key, value, preserveKey = false) {
+  const shown = metadataValue(value) || "-";
+  return `
+    <div class="metadata-row">
+      <div class="metadata-key">${esc(metadataLabel(key, preserveKey))}</div>
+      <div class="metadata-value">${esc(shown)}</div>
+    </div>
+  `;
 }
 
 function compoundRawMetadataTable(compound) {
@@ -3924,7 +4033,7 @@ function compoundRawMetadataTable(compound) {
     <details class="raw-metadata">
       <summary>Exact CSV fields</summary>
       <div class="metadata-table raw">
-        ${rows.map(([key, value]) => metadataRow(key, value)).join("")}
+        ${rows.map(([key, value]) => metadataRow(key, value, true)).join("")}
       </div>
     </details>
   `;
@@ -4077,10 +4186,10 @@ function geneProteinProfile(entity) {
         <small>${esc([asArray(taxon.ids).join(", "), taxon.source].filter(Boolean).join(" | "))}</small>
       </div>
     </div>
-    <details class="gene-protein-details" open>
+    <details class="gene-protein-details">
       <summary>
-        <span>Gene/protein ontology metadata</span>
-        <small>${fmt(profile.row_count || 0)} rows | ${fmt(accessionCount)} UniProt | ${fmt(phytozomeCount)} Phytozome | ${fmt(familyCount)} family/domain | ${fmt(databaseIdCount)} database IDs</small>
+        <span>Gene/protein metadata</span>
+        <small>${fmt(profile.row_count || 0)} Step 10 rows | ${fmt(accessionCount)} UniProt | ${fmt(phytozomeCount)} Phytozome | ${fmt(familyCount)} family/domain</small>
       </summary>
       <div class="metadata-groups">
         ${metadataGroup("Selected UniProt", [
@@ -4166,7 +4275,7 @@ function geneProteinRowsTable(profile) {
           <div class="metadata-group">
             <h3>Row ${index + 1}: ${esc(row.gene_query || row.lookup_query || row.decision || "gene/protein")}</h3>
             <div class="metadata-table raw">
-              ${Object.entries(row.raw_fields || {}).map(([key, value]) => metadataRow(key, value)).join("")}
+              ${Object.entries(row.raw_fields || {}).map(([key, value]) => metadataRow(key, value, true)).join("")}
             </div>
           </div>
         `).join("")}
@@ -4216,34 +4325,56 @@ function geneProteinExplorer(entity) {
   `;
 }
 
-function geneDatabaseIdCard(item) {
+function resourceMeta(values, limit = 5) {
+  const items = uniqueStrings(asArray(values).map((value) => String(value || "").trim()).filter(Boolean));
+  if (!items.length) return "";
+  const visible = items.slice(0, limit);
   return `
-    <article class="fasta-card family-card">
-      <div>
-        <strong>${esc(item.ontology_id || item.identifier || "Gene identifier")}</strong>
-        <span>${esc([item.database, item.source_field].filter(Boolean).join(" | "))}</span>
+    <div class="resource-meta">
+      ${visible.map((item) => `<span>${esc(item)}</span>`).join("")}
+      ${items.length > visible.length ? `<span>+${fmt(items.length - visible.length)} more</span>` : ""}
+    </div>
+  `;
+}
+
+function resourceRow(kind, title, meta, actions, modifier = "", extra = "") {
+  return `
+    <article class="fasta-card resource-row ${modifier}">
+      <div class="resource-main">
+        <span class="resource-kind">${esc(kind)}</span>
+        <strong>${esc(title || "Unresolved resource")}</strong>
+        ${resourceMeta(meta)}
       </div>
-      <div class="click-row">
-        ${item.resource_url ? `<a class="mini-link" href="${esc(item.resource_url)}" target="_blank" rel="noreferrer">Open</a>` : ""}
-      </div>
+      ${actions ? `<div class="resource-actions">${actions}</div>` : ""}
+      ${extra || ""}
     </article>
   `;
 }
 
+function geneDatabaseIdCard(item) {
+  const actions = item.resource_url ? `<a class="mini-link" href="${esc(item.resource_url)}" target="_blank" rel="noreferrer">Open</a>` : "";
+  return resourceRow(
+    "Gene ID",
+    item.ontology_id || item.identifier || "Gene identifier",
+    [item.database, item.source_field],
+    actions,
+    "family-card"
+  );
+}
+
 function familyOntologyCard(item) {
-  return `
-    <article class="fasta-card family-card">
-      <div>
-        <strong>${esc(item.ontology_id || item.id || "Family/domain")}</strong>
-        <span>${esc([item.database, item.type, item.name, item.alias].filter(Boolean).join(" | "))}</span>
-      </div>
-      <div class="click-row">
-        ${item.linked_interpro_ontology_id ? `<span class="badge ontology">${esc(item.linked_interpro_ontology_id)}</span>` : ""}
-        ${badges(item.linked_pfam_ontology_ids || [], "ontology", 4)}
-        ${item.resource_url ? `<a class="mini-link" href="${esc(item.resource_url)}" target="_blank" rel="noreferrer">Open ontology</a>` : ""}
-      </div>
-    </article>
-  `;
+  const actions = [
+    item.linked_interpro_ontology_id ? `<span class="badge ontology">${esc(item.linked_interpro_ontology_id)}</span>` : "",
+    ...asArray(item.linked_pfam_ontology_ids).slice(0, 3).map((id) => `<span class="badge ontology">${esc(id)}</span>`),
+    item.resource_url ? `<a class="mini-link" href="${esc(item.resource_url)}" target="_blank" rel="noreferrer">Open ontology</a>` : ""
+  ].filter(Boolean).join("");
+  return resourceRow(
+    "Family/domain",
+    item.ontology_id || item.id || "Family/domain",
+    [item.database, item.type, item.name, item.alias],
+    actions,
+    "family-card"
+  );
 }
 
 function phytozomeCard(entity, item) {
@@ -4251,42 +4382,40 @@ function phytozomeCard(entity, item) {
   const hasSequence = Boolean(item.sequence);
   const reportUrl = phytozomeGeneUrl(item);
   const searchUrl = phytozomeSearchUrl(item);
-  return `
-    <article class="fasta-card phytozome-card">
-      <div>
-        <strong>${esc(item.gene_id || item.ontology_id || "Phytozome")}</strong>
-        <span>${esc([item.ontology_id, item.code, item.base_gene_id, item.sequence_length ? `${item.sequence_length} aa` : "", item.fasta_id, item.sequence_source_file || item.source_file].filter(Boolean).join(" | "))}</span>
-      </div>
-      <div class="click-row">
-        ${item.base_ontology_id ? `<span class="badge ontology">${esc(item.base_ontology_id)}</span>` : ""}
-        <button class="mini-button primary-action" type="button" data-action="download-phytozome-fasta" data-id="${esc(entity.node_id)}" data-gene-id="${esc(geneId)}" ${hasSequence ? "" : "disabled"}>Download FASTA</button>
-        <button class="mini-button" type="button" data-action="load-phytozome-fasta" data-id="${esc(entity.node_id)}" data-gene-id="${esc(geneId)}" ${hasSequence ? "" : "disabled"}>Preview</button>
-        <a class="mini-link" href="${esc(reportUrl)}" target="_blank" rel="noreferrer">Open report</a>
-        <a class="mini-link" href="${esc(searchUrl)}" target="_blank" rel="noreferrer">Search</a>
-        ${hasSequence ? "" : `<span class="mini-status muted">FASTA source unavailable</span>`}
-      </div>
-      <div class="fasta-live" data-fasta-content="${esc(`${entity.node_id}:phytozome:${geneId}`)}"></div>
-    </article>
-  `;
+  const actions = [
+    item.base_ontology_id ? `<span class="badge ontology">${esc(item.base_ontology_id)}</span>` : "",
+    `<button class="mini-button primary-action" type="button" data-action="download-phytozome-fasta" data-id="${esc(entity.node_id)}" data-gene-id="${esc(geneId)}" ${hasSequence ? "" : "disabled"}>Download FASTA</button>`,
+    `<button class="mini-button" type="button" data-action="load-phytozome-fasta" data-id="${esc(entity.node_id)}" data-gene-id="${esc(geneId)}" ${hasSequence ? "" : "disabled"}>Preview</button>`,
+    `<a class="mini-link" href="${esc(reportUrl)}" target="_blank" rel="noreferrer">Open report</a>`,
+    `<a class="mini-link" href="${esc(searchUrl)}" target="_blank" rel="noreferrer">Search</a>`,
+    hasSequence ? "" : `<span class="mini-status muted">FASTA unavailable</span>`
+  ].filter(Boolean).join("");
+  return resourceRow(
+    "Phytozome",
+    item.gene_id || item.ontology_id || "Phytozome",
+    [item.ontology_id, item.code, item.base_gene_id ? `base ${item.base_gene_id}` : "", item.sequence_length ? `${item.sequence_length} aa` : ""],
+    actions,
+    "phytozome-card",
+    `<div class="fasta-live" data-fasta-content="${esc(`${entity.node_id}:phytozome:${geneId}`)}"></div>`
+  );
 }
 
 function fastaCard(entity, item) {
   const accession = item.accession || "";
   const fastaUrl = uniprotFastaUrl(accession);
-  return `
-    <article class="fasta-card">
-      <div>
-        <strong>${esc(accession || "No accession")}</strong>
-        <span>${esc([item.kind, item.gene_name, item.protein_name, item.organism, item.reviewed_status].filter(Boolean).join(" | "))}</span>
-      </div>
-      <div class="click-row">
-        <button class="mini-button primary-action" type="button" data-action="download-fasta" data-id="${esc(entity.node_id)}" data-accession="${esc(accession)}" ${accession ? "" : "disabled"}>Download FASTA</button>
-        <button class="mini-button" type="button" data-action="load-fasta" data-id="${esc(entity.node_id)}" data-accession="${esc(accession)}" ${accession ? "" : "disabled"}>Load FASTA</button>
-        ${accession ? `<a class="mini-link" href="${esc(fastaUrl)}" target="_blank" rel="noreferrer">Open FASTA</a>` : ""}
-      </div>
-      <div class="fasta-live" data-fasta-content="${esc(`${entity.node_id}:${accession}`)}"></div>
-    </article>
-  `;
+  const actions = [
+    `<button class="mini-button primary-action" type="button" data-action="download-fasta" data-id="${esc(entity.node_id)}" data-accession="${esc(accession)}" ${accession ? "" : "disabled"}>Download FASTA</button>`,
+    `<button class="mini-button" type="button" data-action="load-fasta" data-id="${esc(entity.node_id)}" data-accession="${esc(accession)}" ${accession ? "" : "disabled"}>Preview</button>`,
+    accession ? `<a class="mini-link" href="${esc(fastaUrl)}" target="_blank" rel="noreferrer">Open UniProt</a>` : ""
+  ].filter(Boolean).join("");
+  return resourceRow(
+    "UniProt",
+    accession || "No accession",
+    [item.kind, item.gene_name, item.protein_name, item.organism, item.reviewed_status],
+    actions,
+    "",
+    `<div class="fasta-live" data-fasta-content="${esc(`${entity.node_id}:${accession}`)}"></div>`
+  );
 }
 
 function uniprotFastaUrl(accession) {

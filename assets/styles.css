@@ -3168,57 +3168,73 @@ textarea {
 
 .metadata-groups {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  padding: 10px;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 12px;
+  padding: 12px;
 }
 
 .metadata-group {
   min-width: 0;
   display: grid;
   align-content: start;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--line);
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid #e3ebe7;
   border-radius: 8px;
-  background: #fbfcfb;
+  background: #fcfdfc;
 }
 
 .metadata-group h3 {
   margin: 0;
-  color: #2f403a;
-  font-size: 12px;
+  color: #34443f;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .metadata-table {
   display: grid;
-  grid-template-columns: minmax(108px, 0.4fr) minmax(0, 1fr);
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--line);
+  gap: 0;
+}
+
+.metadata-row {
+  display: grid;
+  grid-template-columns: minmax(128px, 0.38fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 7px 0;
+  border-top: 1px solid #edf2ef;
+}
+
+.metadata-row:first-child {
+  border-top: 0;
 }
 
 .metadata-key,
 .metadata-value {
   min-width: 0;
-  padding: 6px 8px;
-  background: #fff;
-  font-size: 11px;
-  line-height: 1.35;
+  padding: 0;
+  background: transparent;
+  font-size: 11.5px;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
 .metadata-key {
-  color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  color: #6d7a75;
+  font-weight: 800;
 }
 
 .metadata-value {
   color: #20312b;
   overflow-wrap: anywhere;
+}
+
+.metadata-table.raw .metadata-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 650;
 }
 
 .raw-metadata {
@@ -3287,50 +3303,97 @@ textarea {
 
 .fasta-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .fasta-card {
   display: grid;
-  gap: 9px;
-  padding: 10px;
-  border: 1px solid var(--line);
+  gap: 8px;
+  padding: 10px 11px;
+  border: 1px solid #e0e8e4;
   border-radius: 8px;
-  background: #fbfcfb;
+  background: #fff;
 }
 
 .fasta-card.phytozome-card {
-  border-left: 4px solid #4f7f58;
-  background: #f8fbf8;
+  border-left: 3px solid #4f7f58;
 }
 
 .fasta-card.family-card {
-  border-left: 4px solid #6256a5;
-  background: #faf9fd;
+  border-left: 3px solid #6256a5;
 }
 
-.fasta-card strong,
-.fasta-card span {
-  display: block;
+.resource-row {
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: center;
+  column-gap: 14px;
 }
 
-.fasta-card strong {
+.resource-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.resource-kind {
+  color: #687770;
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.resource-main strong {
+  min-width: 0;
   color: #20312b;
   font-size: 13px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
-.fasta-card span {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
+.resource-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.resource-meta span {
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 1px solid #e3ece7;
+  border-radius: 999px;
+  background: #f8fbfa;
+  color: #5e6e68;
+  font-size: 11px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.resource-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 170px;
+}
+
+.resource-extra {
+  grid-column: 1 / -1;
 }
 
 .fasta-live:empty {
   display: none;
 }
 
+.fasta-live {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
 .fasta-result {
+  grid-column: 1 / -1;
   display: grid;
   gap: 8px;
   padding: 10px;
@@ -6077,8 +6140,15 @@ body[data-tab="discover"] .main-panel {
     grid-template-columns: 1fr;
   }
 
-  .metadata-table {
+  .metadata-table,
+  .metadata-row,
+  .resource-row {
     grid-template-columns: 1fr;
+  }
+
+  .resource-actions {
+    justify-content: flex-start;
+    min-width: 0;
   }
 
   .action-menu {
