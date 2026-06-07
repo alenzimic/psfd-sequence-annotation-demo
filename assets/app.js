@@ -177,6 +177,10 @@ function clean(value) {
   return String(value || "unknown").replace(/_event$/, "").replaceAll("_", " ");
 }
 
+function cleanOptionalDisplay(value) {
+  return String(value || "").replace(/_event$/, "").replaceAll("_", " ").trim();
+}
+
 function shortId(value) {
   const parts = String(value || "").split(".");
   return parts[parts.length - 1] || String(value || "");
@@ -917,8 +921,21 @@ function mergeTaxonTissueItems(items) {
   return Array.from(byKey.values()).sort((a, b) => String(a.label || "").localeCompare(String(b.label || "")));
 }
 
+function taxonTissueItemIsInformative(item) {
+  if (!item) return false;
+  const label = String(item.label || "").trim();
+  const id = String(item.ontology_id || item.entity_id || "").trim();
+  const normalizedLabel = label.toLowerCase();
+  const normalizedId = id.toLowerCase();
+  return Boolean(label || id)
+    && normalizedLabel !== "unknown"
+    && normalizedId !== "unknown"
+    && normalizedLabel !== "-"
+    && normalizedId !== "-";
+}
+
 function formatTaxonTissueDisplay(items) {
-  return uniqueStrings(items.map((item) => {
+  return uniqueStrings(items.filter(taxonTissueItemIsInformative).map((item) => {
     const label = item.label || item.entity_id || "";
     const mark = item.mark || "";
     const ontology = item.ontology_id ? ` (${item.ontology_id})` : "";
@@ -927,7 +944,7 @@ function formatTaxonTissueDisplay(items) {
 }
 
 function taxonTissueComparableKey(item) {
-  if (!item) return "";
+  if (!taxonTissueItemIsInformative(item)) return "";
   const kind = String(item.kind || "").toLowerCase();
   const id = String(item.ontology_id || item.entity_id || item.label || "").trim().toLowerCase();
   return kind && id ? `${kind}|${id}` : "";
@@ -3124,19 +3141,22 @@ function relationTaxonTissueContext(rel) {
 
 function relationTaxonTissueDisplay(rel, key) {
   const display = formatTaxonTissueDisplay(relationTaxonTissueDisplayItems(rel, key));
-  return clean(display || relationTaxonTissueContext(rel)?.[key]?.display || "");
+  return cleanOptionalDisplay(display || relationTaxonTissueContext(rel)?.[key]?.display || "");
 }
 
 function relationTaxonTissueOverlapDisplay(rel) {
-  const eventItems = relationTaxonTissueDisplayItems(rel, "event");
-  const entityLinkedKeys = new Set(relationTaxonTissueDisplayItems(rel, "entity_linked")
+  const eventItems = relationTaxonTissueDisplayItems(rel, "event").filter(taxonTissueItemIsInformative);
+  const entityLinkedItems = relationTaxonTissueDisplayItems(rel, "entity_linked").filter(taxonTissueItemIsInformative);
+  const entityLinkedKeys = new Set(entityLinkedItems
     .map(taxonTissueComparableKey)
     .filter(Boolean));
   const overlap = uniqueBy(
     eventItems.filter((item) => entityLinkedKeys.has(taxonTissueComparableKey(item))),
     taxonTissueComparableKey
   );
-  return clean(formatTaxonTissueDisplay(overlap));
+  const overlapDisplay = cleanOptionalDisplay(formatTaxonTissueDisplay(overlap));
+  if (overlapDisplay) return overlapDisplay;
+  return cleanOptionalDisplay(formatTaxonTissueDisplay(uniqueBy(entityLinkedItems, taxonTissueComparableKey)));
 }
 
 function taxonTissueContextBlock(rel, options = {}) {
