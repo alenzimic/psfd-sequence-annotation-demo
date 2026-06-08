@@ -955,8 +955,10 @@ function relationTaxonTissueBaselineKeys(rel) {
   return new Set([
     ...asArray(context.direct?.taxa),
     ...asArray(context.direct?.tissues),
+    ...asArray(context.direct?.assays),
     ...asArray(context.event?.taxa),
-    ...asArray(context.event?.tissues)
+    ...asArray(context.event?.tissues),
+    ...asArray(context.event?.assays)
   ].map(taxonTissueComparableKey).filter(Boolean));
 }
 
@@ -964,7 +966,7 @@ function relationTaxonTissueDisplayItems(rel, key) {
   const context = relationTaxonTissueContext(rel);
   const group = context?.[key] || {};
   const baselineKeys = key === "entity_linked" ? relationTaxonTissueBaselineKeys(rel) : new Set();
-  return [...asArray(group.taxa), ...asArray(group.tissues)].map((item) => {
+  return [...asArray(group.taxa), ...asArray(group.tissues), ...asArray(group.assays)].map((item) => {
     if (key !== "entity_linked") return { ...item, mark: "" };
     const method = String(item.method || "");
     const isContextOnlyPropagation = method === "entity_linked_direct_context";
@@ -3140,11 +3142,18 @@ function relationTaxonTissueContext(rel) {
 }
 
 function relationTaxonTissueDisplay(rel, key) {
+  const context = relationTaxonTissueContext(rel);
+  if (key === "agreement") {
+    const agreementDisplay = cleanOptionalDisplay(context?.agreement?.display || "");
+    if (agreementDisplay) return agreementDisplay;
+  }
   const display = formatTaxonTissueDisplay(relationTaxonTissueDisplayItems(rel, key));
-  return cleanOptionalDisplay(display || relationTaxonTissueContext(rel)?.[key]?.display || "");
+  return cleanOptionalDisplay(display || context?.[key]?.display || "");
 }
 
 function relationTaxonTissueOverlapDisplay(rel) {
+  const agreementDisplay = relationTaxonTissueDisplay(rel, "agreement");
+  if (agreementDisplay) return agreementDisplay;
   const eventItems = relationTaxonTissueDisplayItems(rel, "event").filter(taxonTissueItemIsInformative);
   const entityLinkedItems = relationTaxonTissueDisplayItems(rel, "entity_linked").filter(taxonTissueItemIsInformative);
   const entityLinkedKeys = new Set(entityLinkedItems
@@ -3428,6 +3437,7 @@ function relationEvidence(rel) {
   const sentences = rel.evidence_sentence_ids || [];
   const contextSets = relationContextSets(rel);
   const evidence = relationEvidenceSentence(rel);
+  const taxonTissueAgreement = relationTaxonTissueAgreement(rel);
   return `
     <div class="two-col">
       <div class="kv">
@@ -3451,7 +3461,72 @@ function relationEvidence(rel) {
         ${neighboringContextDisclosure(rel, "Neighboring context")}
       </div>
     </div>
+    ${taxonTissueAgreement}
   `;
+}
+
+const contextAgreementGroups = [
+  { key: "taxa", label: "Taxon" },
+  { key: "tissues", label: "Tissue" },
+  { key: "assays", label: "Assay" }
+];
+
+function relationTaxonTissueAgreement(rel) {
+  const context = rel?.taxon_tissue_context || {};
+  const rows = contextAgreementGroups.map((group) => ({
+    ...group,
+    event: asArray(context.event?.[group.key]).filter(Boolean),
+    entityLinked: asArray(context.entity_linked?.[group.key]).filter(Boolean),
+    agreement: asArray(context.agreement?.[group.key]).filter(Boolean)
+  }));
+  const hasAny = rows.some((row) => row.event.length || row.entityLinked.length || row.agreement.length);
+  if (!hasAny) return "";
+  return `
+    <div class="context-agreement-panel">
+      <div class="context-agreement-head">
+        <strong>Context agreement</strong>
+        <span>Computed independently for taxon, tissue, and assay context.</span>
+      </div>
+      <div class="context-agreement-table">
+        <div class="context-agreement-header">Category</div>
+        <div class="context-agreement-header">Event context</div>
+        <div class="context-agreement-header">Entity-linked context</div>
+        <div class="context-agreement-header">Agreement</div>
+        ${rows.map((row) => `
+          <div class="context-agreement-category">${esc(row.label)}</div>
+          <div>${contextAgreementChips(row.event)}</div>
+          <div>${contextAgreementChips(row.entityLinked, { linked: true })}</div>
+          <div>${contextAgreementChips(row.agreement, { agreement: true })}</div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function contextAgreementChips(items, options = {}) {
+  if (!items.length) return `<span class="muted tiny">-</span>`;
+  return `<div class="context-agreement-chips">${items.map((item) => contextAgreementChip(item, options)).join("")}</div>`;
+}
+
+function contextAgreementChip(item, options = {}) {
+  const label = item?.label || item?.selected_label || item?.entity_id || "";
+  const ontology = item?.ontology_id || "";
+  const status = agreementStatusLabel(item?.agreement_status);
+  const statusClass = item?.agreement_status === "overlap" ? "overlap" : item?.agreement_status === "entity_linked_fallback" ? "fallback" : "";
+  const linked = options.linked || item?.mark === "*";
+  return `
+    <span class="context-agreement-chip ${options.agreement ? "agreement" : ""} ${statusClass}">
+      <span>${esc(label)}${linked && !options.agreement ? "*" : ""}</span>
+      ${ontology ? `<small>${esc(ontology)}</small>` : ""}
+      ${options.agreement && status ? `<em>${esc(status)}</em>` : ""}
+    </span>
+  `;
+}
+
+function agreementStatusLabel(value) {
+  if (value === "overlap") return "overlap";
+  if (value === "entity_linked_fallback") return "entity-linked fallback";
+  return value || "";
 }
 
 function neighboringContextDisclosure(rel, title) {
