@@ -894,14 +894,17 @@ function mergeTaxonTissueContexts(contexts) {
   ["direct", "event", "entity_linked"].forEach((key) => {
     const taxa = mergeTaxonTissueItems(contexts.flatMap((context) => asArray(context?.[key]?.taxa)));
     const tissues = mergeTaxonTissueItems(contexts.flatMap((context) => asArray(context?.[key]?.tissues)));
+    const assays = mergeTaxonTissueItems(contexts.flatMap((context) => asArray(context?.[key]?.assays)));
     const provenanceCount = contexts.reduce((sum, context) => sum + Number(context?.[key]?.provenance_count || 0), 0);
     merged[key] = {
-      display: formatTaxonTissueDisplay([...taxa, ...tissues]),
+      display: formatTaxonTissueDisplay([...taxa, ...tissues, ...assays]),
       taxa,
       tissues,
-      provenance_count: provenanceCount || taxa.length + tissues.length
+      assays,
+      provenance_count: provenanceCount || taxa.length + tissues.length + assays.length
     };
   });
+  merged.agreement = taxonTissueGroupFromItems(categoryAwareTaxonTissueAgreementItems(merged.event, merged.entity_linked));
   return merged;
 }
 
@@ -948,6 +951,50 @@ function taxonTissueComparableKey(item) {
   const kind = String(item.kind || "").toLowerCase();
   const id = String(item.ontology_id || item.entity_id || item.label || "").trim().toLowerCase();
   return kind && id ? `${kind}|${id}` : "";
+}
+
+const taxonTissueContextCategories = ["taxa", "tissues", "assays"];
+
+function categoryAwareTaxonTissueAgreementItems(eventGroup = {}, entityLinkedGroup = {}) {
+  const items = [];
+  taxonTissueContextCategories.forEach((category) => {
+    const eventItems = asArray(eventGroup?.[category]).filter(taxonTissueItemIsInformative);
+    const linkedItems = asArray(entityLinkedGroup?.[category]).filter(taxonTissueItemIsInformative);
+    if (!linkedItems.length) return;
+    const eventKeys = new Set(eventItems.map(taxonTissueComparableKey).filter(Boolean));
+    if (eventKeys.size) {
+      linkedItems.forEach((item) => {
+        if (!eventKeys.has(taxonTissueComparableKey(item))) return;
+        items.push({
+          ...item,
+          agreement_status: item.agreement_status || "overlap",
+          agreement_source: item.agreement_source || "event_and_entity_linked"
+        });
+      });
+      return;
+    }
+    linkedItems.forEach((item) => {
+      items.push({
+        ...item,
+        agreement_status: item.agreement_status || "entity_linked_fallback",
+        agreement_source: item.agreement_source || "entity_linked_category_fallback"
+      });
+    });
+  });
+  return uniqueBy(items, taxonTissueComparableKey);
+}
+
+function taxonTissueGroupFromItems(items) {
+  const taxa = mergeTaxonTissueItems(items.filter((item) => item?.kind === "taxa"));
+  const tissues = mergeTaxonTissueItems(items.filter((item) => item?.kind === "tissues"));
+  const assays = mergeTaxonTissueItems(items.filter((item) => item?.kind === "assays"));
+  return {
+    display: formatTaxonTissueDisplay([...taxa, ...tissues, ...assays]),
+    taxa,
+    tissues,
+    assays,
+    provenance_count: taxa.length + tissues.length + assays.length
+  };
 }
 
 function relationTaxonTissueBaselineKeys(rel) {
@@ -3144,6 +3191,10 @@ function relationTaxonTissueContext(rel) {
 function relationTaxonTissueDisplay(rel, key) {
   const context = relationTaxonTissueContext(rel);
   if (key === "agreement") {
+    const computedDisplay = cleanOptionalDisplay(formatTaxonTissueDisplay(
+      categoryAwareTaxonTissueAgreementItems(context.event || {}, context.entity_linked || {})
+    ));
+    if (computedDisplay) return computedDisplay;
     const agreementDisplay = cleanOptionalDisplay(context?.agreement?.display || "");
     if (agreementDisplay) return agreementDisplay;
   }
@@ -3154,18 +3205,9 @@ function relationTaxonTissueDisplay(rel, key) {
 function relationTaxonTissueOverlapDisplay(rel) {
   const agreementDisplay = relationTaxonTissueDisplay(rel, "agreement");
   if (agreementDisplay) return agreementDisplay;
-  const eventItems = relationTaxonTissueDisplayItems(rel, "event").filter(taxonTissueItemIsInformative);
-  const entityLinkedItems = relationTaxonTissueDisplayItems(rel, "entity_linked").filter(taxonTissueItemIsInformative);
-  const entityLinkedKeys = new Set(entityLinkedItems
-    .map(taxonTissueComparableKey)
-    .filter(Boolean));
-  const overlap = uniqueBy(
-    eventItems.filter((item) => entityLinkedKeys.has(taxonTissueComparableKey(item))),
-    taxonTissueComparableKey
-  );
-  const overlapDisplay = cleanOptionalDisplay(formatTaxonTissueDisplay(overlap));
-  if (overlapDisplay) return overlapDisplay;
-  return cleanOptionalDisplay(formatTaxonTissueDisplay(uniqueBy(entityLinkedItems, taxonTissueComparableKey)));
+  const context = relationTaxonTissueContext(rel);
+  const computedItems = categoryAwareTaxonTissueAgreementItems(context.event || {}, context.entity_linked || {});
+  return cleanOptionalDisplay(formatTaxonTissueDisplay(computedItems));
 }
 
 function taxonTissueContextBlock(rel, options = {}) {
@@ -3473,12 +3515,15 @@ const contextAgreementGroups = [
 
 function relationTaxonTissueAgreement(rel) {
   const context = rel?.taxon_tissue_context || {};
-  const rows = contextAgreementGroups.map((group) => ({
-    ...group,
-    event: asArray(context.event?.[group.key]).filter(Boolean),
-    entityLinked: asArray(context.entity_linked?.[group.key]).filter(Boolean),
-    agreement: asArray(context.agreement?.[group.key]).filter(Boolean)
-  }));
+  const rows = contextAgreementGroups.map((group) => {
+    const event = asArray(context.event?.[group.key]).filter(Boolean);
+    const entityLinked = asArray(context.entity_linked?.[group.key]).filter(Boolean);
+    const agreement = categoryAwareTaxonTissueAgreementItems(
+      { [group.key]: event },
+      { [group.key]: entityLinked }
+    );
+    return { ...group, event, entityLinked, agreement };
+  });
   const hasAny = rows.some((row) => row.event.length || row.entityLinked.length || row.agreement.length);
   if (!hasAny) return "";
   return `

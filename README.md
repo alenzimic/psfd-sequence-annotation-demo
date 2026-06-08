@@ -20,7 +20,9 @@ features are tested here.
 - Attribute filters for genes, metabolites, pathways, tissues, species, traits,
   molecular traits, and experimental conditions.
 - Tab-delimited relationship export with these columns:
-  `compound_or_gene_name`, `relation`, `context`, `attribute_type`,
+  `compound_or_gene_name`, `relation`, `context`,
+  `event_taxon_tissue_context`, `entity_linked_taxon_tissue_context`,
+  `overlap_taxon_tissue_context`, `attribute_type`,
   `ontology_normalized_relation`.
 
 ## Scientific Note
@@ -32,9 +34,30 @@ database.
 
 ## Updating Data
 
-The static data files are in `data/`. To rebuild the sequence index after
-refreshing `data/global_path_index.json`, run:
+The static data files are in `data/`. Rebuild them directly from the PSFD
+pipeline outputs in `/local/storage/alen/projects/1_PSFD/output/...`:
 
 ```bash
+cd /local/storage/alen/projects/psfd-sequence-annotation-demo
+python scripts/build_demo_data.py --source-root /local/storage/alen/projects/1_PSFD
 python scripts/build_sequence_index.py
+```
+
+`build_demo_data.py` rewrites `data/manifest.json`, `data/global_path_index.json`,
+and `data/papers/*.json`. `build_sequence_index.py` rebuilds the browser-side
+UniProt FASTA index from the refreshed `data/global_path_index.json`.
+
+After rebuilding, validate and publish with:
+
+```bash
+node --check assets/app.js
+python -m py_compile scripts/build_demo_data.py scripts/build_sequence_index.py
+python - <<'PY'
+import json
+from pathlib import Path
+for path in Path("data").glob("**/*.json"):
+    json.loads(path.read_text(encoding="utf-8"))
+print("JSON bundle is valid")
+PY
+git status --short
 ```
