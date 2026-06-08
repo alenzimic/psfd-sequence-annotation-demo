@@ -32,6 +32,12 @@ It is useful for fast demo annotation of close sequence matches. Final sequence
 validation should use BLAST, DIAMOND, or MMseqs against the full sequence
 database.
 
+PSFD inter-event links are displayed in evidence tiers. **Supported** links are
+strict evidence-supported relations. **Hypothesis** links are plausible
+evidence-linked relations retained for recall-preserving discovery; they are not
+error rows or failed manual review. Rejected dependency candidates are hidden by
+default and are mainly useful for audits or model-training negatives.
+
 ## Updating Data
 
 The static data files are in `data/`. Rebuild them directly from the PSFD

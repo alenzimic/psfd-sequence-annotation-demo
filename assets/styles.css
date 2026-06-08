@@ -3015,6 +3015,11 @@ textarea {
   color: #8a4c0f;
 }
 
+.badge.hypothesis {
+  background: #fff3de;
+  color: #8a4c0f;
+}
+
 .badge.rejected {
   background: #fae7ea;
   color: #8c3140;

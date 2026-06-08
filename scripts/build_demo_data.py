@@ -1371,8 +1371,8 @@ def dependency_tier(raw: dict[str, Any], fallback: str = "") -> str:
     label = str(raw.get("label", ""))
     if verdict == "accepted" or label == "1":
         return "accepted"
-    if verdict == "plausible_review":
-        return "review"
+    if verdict == "hypothesis":
+        return "hypothesis"
     if verdict == "rejected" or label == "0":
         return "rejected"
     return fallback or "candidate"
@@ -1477,17 +1477,18 @@ def build_paper(pmcid: str) -> dict[str, Any]:
 
     dependencies: list[dict[str, Any]] = []
     seen_dependencies: set[str] = set()
-    for row in hypergraph.get("event_dependencies", []):
+    for row in hypergraph.get("inter_event_relations", []):
         dep = slim_dependency(row, "accepted")
         if dep["upstream_event_id"] in event_ids and dep["downstream_event_id"] in event_ids:
             dependencies.append(dep)
             seen_dependencies.add(dep["dependency_id"])
-    for row in hypergraph.get("review_event_dependencies", []):
-        dep = slim_dependency(row, "review")
+    hypothesis_rows = hypergraph.get("hypothesis_inter_event_relations", [])
+    for row in hypothesis_rows:
+        dep = slim_dependency(row, "hypothesis")
         if dep["upstream_event_id"] in event_ids and dep["downstream_event_id"] in event_ids:
             dependencies.append(dep)
             seen_dependencies.add(dep["dependency_id"])
-    for row in hypergraph.get("event_dependency_labels", []):
+    for row in hypergraph.get("inter_event_relation_labels", []):
         if dependency_tier(row) != "rejected":
             continue
         dep = slim_dependency(row, "rejected")
@@ -1521,7 +1522,7 @@ def build_paper(pmcid: str) -> dict[str, Any]:
         counts = dependency_counts_by_event[event["event_id"]]
         event["dependency_counts"] = {
             "accepted": int(counts.get("accepted", 0)),
-            "review": int(counts.get("review", 0)),
+            "hypothesis": int(counts.get("hypothesis", 0)),
             "rejected": int(counts.get("rejected", 0)),
         }
         event["has_accepted_dependency"] = counts.get("accepted", 0) > 0
@@ -1545,7 +1546,7 @@ def build_paper(pmcid: str) -> dict[str, Any]:
         "entities": len(entities_by_id),
         "dependencies": len(dependencies),
         "accepted_dependencies": sum(1 for dep in dependencies if dep["tier"] == "accepted"),
-        "review_dependencies": sum(1 for dep in dependencies if dep["tier"] == "review"),
+        "hypothesis_dependencies": sum(1 for dep in dependencies if dep["tier"] == "hypothesis"),
         "rejected_dependencies": sum(1 for dep in dependencies if dep["tier"] == "rejected"),
         "events_without_accepted_dependency": sum(1 for row in events if not row["has_accepted_dependency"]),
         "normalized_entities": sum(
@@ -1592,7 +1593,7 @@ def build_paper(pmcid: str) -> dict[str, Any]:
         "dependencies": sorted(
             dependencies,
             key=lambda row: (
-                {"accepted": 0, "review": 1, "rejected": 2}.get(row["tier"], 9),
+                {"accepted": 0, "hypothesis": 1, "rejected": 2}.get(row["tier"], 9),
                 row["dependency_id"],
             ),
         ),
@@ -1823,7 +1824,7 @@ def build(outdir: Path) -> dict[str, Any]:
         "notes": [
             "Generated from existing PSFD pipeline outputs.",
             "Absolute local paths are removed from the public data bundle.",
-            "Rejected dependency candidates come from event_dependency_labels.csv.",
+            "Rejected dependency candidates come from inter_event_relation_labels.csv.",
             "Pathfinder uses normalized ontology IDs as cross-paper bridge nodes.",
             "Compound entities include Step 930 ClassyFire and NPClassifier metadata when available.",
             "Gene/protein entities include Step 10 UniProt normalization metadata when available.",

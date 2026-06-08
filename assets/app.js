@@ -9,7 +9,7 @@ const state = {
   selectedKind: null,
   selectedId: null,
   includeAccepted: true,
-  includeReview: false,
+  includeHypothesis: false,
   includeRejected: false,
   showSharedContext: false,
   orphanOnly: false,
@@ -27,7 +27,7 @@ const state = {
   pathUseDependencies: true,
   pathUseOntologyBridges: true,
   pathUseContext: false,
-  pathIncludeReview: true,
+  pathIncludeHypothesis: true,
   pathIncludeRejected: false,
   pathResults: [],
   pathStatus: "",
@@ -179,6 +179,26 @@ function clean(value) {
 
 function cleanOptionalDisplay(value) {
   return String(value || "").replace(/_event$/, "").replaceAll("_", " ").trim();
+}
+
+function canonicalTier(tier) {
+  return String(tier || "");
+}
+
+function isHypothesisTier(tier) {
+  return canonicalTier(tier) === "hypothesis";
+}
+
+function tierClass(tier) {
+  return canonicalTier(tier) || "candidate";
+}
+
+function tierLabel(tier) {
+  const canonical = canonicalTier(tier);
+  if (canonical === "accepted") return "Supported";
+  if (canonical === "hypothesis") return "Hypothesis";
+  if (canonical === "rejected") return "Rejected";
+  return clean(canonical || tier || "candidate");
 }
 
 function shortId(value) {
@@ -454,7 +474,7 @@ function captureViewState() {
     selectedId: state.selectedId,
     query: state.query,
     includeAccepted: state.includeAccepted,
-    includeReview: state.includeReview,
+    includeHypothesis: state.includeHypothesis,
     includeRejected: state.includeRejected,
     showSharedContext: state.showSharedContext,
     orphanOnly: state.orphanOnly,
@@ -509,7 +529,7 @@ function applyViewState(view) {
     "selectedId",
     "query",
     "includeAccepted",
-    "includeReview",
+    "includeHypothesis",
     "includeRejected",
     "showSharedContext",
     "orphanOnly",
@@ -1165,7 +1185,7 @@ function renderFilters() {
   if (state.tab === "dependencies") {
     els.filterPanel.innerHTML = filterDrawer("Dependency Filters", `
       ${check("includeAccepted", "Accepted dependencies")}
-      ${check("includeReview", "Review-tier plausible links")}
+      ${check("includeHypothesis", "Hypothesis-tier links")}
       ${check("includeRejected", "Rejected candidates")}
       ${check("showSharedContext", "Show shared-context links")}
     `);
@@ -1209,7 +1229,7 @@ function renderFilters() {
     ${check("pathUseDependencies", "Use event dependencies")}
     ${check("pathUseOntologyBridges", "Use normalized ontology bridges")}
     ${check("pathUseContext", "Use relation context edges")}
-    ${check("pathIncludeReview", "Allow review-tier dependencies")}
+    ${check("pathIncludeHypothesis", "Allow hypothesis-tier dependencies")}
     ${check("pathIncludeRejected", "Allow rejected dependency candidates")}
   `);
 }
@@ -1260,14 +1280,14 @@ function visibleDependencies() {
   return state.data.dependencies
     .filter((dep) => {
       if (dep.tier === "accepted" && !state.includeAccepted) return false;
-      if (dep.tier === "review" && !state.includeReview) return false;
+      if (isHypothesisTier(dep.tier) && !state.includeHypothesis) return false;
       if (dep.tier === "rejected" && !state.includeRejected) return false;
       if (!state.showSharedContext && dep.dependency_type === "shared_context") return false;
       return queryMatches(dependencyText(dep));
     })
     .sort((a, b) => {
-      const tierRank = { accepted: 0, review: 1, rejected: 2 };
-      const rank = (tierRank[a.tier] ?? 9) - (tierRank[b.tier] ?? 9);
+      const tierRank = { accepted: 0, hypothesis: 1, rejected: 2 };
+      const rank = (tierRank[canonicalTier(a.tier)] ?? 9) - (tierRank[canonicalTier(b.tier)] ?? 9);
       if (rank) return rank;
       return Number(b.confidence || 0) - Number(a.confidence || 0) || a.dependency_id.localeCompare(b.dependency_id);
     });
@@ -1478,7 +1498,7 @@ function exposeSelectionInFilters(kind, id) {
   if (kind === "dependency") {
     const dep = state.indexes?.dependencyById?.get(id);
     if (dep?.tier === "accepted") state.includeAccepted = true;
-    if (dep?.tier === "review") state.includeReview = true;
+    if (isHypothesisTier(dep?.tier)) state.includeHypothesis = true;
     if (dep?.tier === "rejected") state.includeRejected = true;
     if (dep?.dependency_type === "shared_context") state.showSharedContext = true;
   }
@@ -1886,7 +1906,7 @@ function renderDependencyMain(dep) {
           <p>Read the biological claim from source event, through the dependency bridge, into the target event.</p>
           ${dependencyProvenancePills(dep)}
         </div>
-        <div>${badges([dep.tier], dep.tier)} ${badges([clean(dep.dependency_type)])}</div>
+        <div>${badges([tierLabel(dep.tier)], tierClass(dep.tier))} ${badges([clean(dep.dependency_type)])}</div>
       </div>
       ${mechanismMap(dep)}
     </section>
@@ -2079,12 +2099,12 @@ function dependenciesSharingEvents(dep) {
 
 function dependencyNeighborSort(dep) {
   const ids = new Set([dep.upstream_event_id, dep.downstream_event_id]);
-  const tierRank = { accepted: 0, review: 1, rejected: 2 };
+  const tierRank = { accepted: 0, hypothesis: 1, rejected: 2 };
   return (a, b) => {
     const aShared = Number(ids.has(a.upstream_event_id)) + Number(ids.has(a.downstream_event_id));
     const bShared = Number(ids.has(b.upstream_event_id)) + Number(ids.has(b.downstream_event_id));
     if (bShared !== aShared) return bShared - aShared;
-    const tierDiff = (tierRank[a.tier] ?? 9) - (tierRank[b.tier] ?? 9);
+    const tierDiff = (tierRank[canonicalTier(a.tier)] ?? 9) - (tierRank[canonicalTier(b.tier)] ?? 9);
     if (tierDiff) return tierDiff;
     return String(a.dependency_id).localeCompare(String(b.dependency_id));
   };
@@ -2106,7 +2126,7 @@ function dependencyBridgeCard(dep, label) {
       <span class="bridge-nav-kicker">${esc(label)}</span>
       <strong>${esc(clean(dep.dependency_type))}</strong>
       <span>${esc(shortText(`${clean(source?.event_type)} -> ${clean(target?.event_type)}`, 72))}</span>
-      <small>${esc(bridge)}${dep.tier ? ` | ${esc(dep.tier)}` : ""}</small>
+      <small>${esc(bridge)}${dep.tier ? ` | ${esc(tierLabel(dep.tier))}` : ""}</small>
     </button>
   `;
 }
@@ -2461,7 +2481,7 @@ function dependencyBridgePanel(dep, color) {
       <div class="bridge-card-core">
         <span class="bridge-eyebrow">Dependency link</span>
         <strong>${esc(clean(dep.dependency_type))}</strong>
-        <span class="bridge-tier">${esc(dep.tier)}${dep.confidence ? ` | confidence ${esc(dep.confidence)}` : ""}</span>
+        <span class="bridge-tier">${esc(tierLabel(dep.tier))}${dep.confidence ? ` | confidence ${esc(dep.confidence)}` : ""}</span>
         ${dependencyProvenancePills(dep, { compact: true })}
         <div class="bridge-facts">
           <div>
@@ -3245,7 +3265,7 @@ function dependencyEvidence(dep) {
     <div class="two-col">
       <div class="kv">
         <div class="key">Dependency ID</div><div>${esc(dep.dependency_id)}</div>
-        <div class="key">Verdict</div><div>${badges([dep.tier], dep.tier)} ${esc(dep.support_verdict || "")}</div>
+        <div class="key">Verdict</div><div>${badges([tierLabel(dep.tier)], tierClass(dep.tier))} ${esc(dep.support_verdict || "")}</div>
         <div class="key">Evidence sections</div><div>${provenancePillGroup(dependencyEvidenceSections(dep), "section") || `<span class="muted">-</span>`}</div>
         <div class="key">Support basis</div><div>${provenancePillGroup([dep.support_verdict || dep.verdict, ...dependencyEvidenceModes(dep)], "support") || `<span class="muted">-</span>`}</div>
         <div class="key">Origin</div><div>${esc(dep.dependency_origin || "-")}</div>
@@ -3309,7 +3329,7 @@ function renderEventMain(event) {
         <div class="kv">
           <div class="key">Relations</div><div>${fmt(event.relation_count)}</div>
           <div class="key">Accepted deps</div><div>${fmt(event.dependency_counts.accepted)}</div>
-          <div class="key">Review deps</div><div>${fmt(event.dependency_counts.review)}</div>
+          <div class="key">Hypothesis deps</div><div>${fmt(event.dependency_counts.hypothesis)}</div>
           <div class="key">Confidence</div><div>${esc(event.confidence || "-")}</div>
           <div class="key">Reason</div><div>${esc(event.reason_code || "-")}</div>
           <div class="key">Evidence sections</div><div>${provenancePillGroup(eventEvidenceSections(event, relations), "section") || `<span class="muted">-</span>`}</div>
@@ -3416,7 +3436,7 @@ function dependencyButtons(deps, eventId) {
         const other = state.indexes.eventById.get(otherId);
         return `
           <div class="compact-card">
-            <strong>${esc(clean(dep.dependency_type))}</strong> ${badges([dep.tier], dep.tier)}
+            <strong>${esc(clean(dep.dependency_type))}</strong> ${badges([tierLabel(dep.tier)], tierClass(dep.tier))}
             <div class="muted">${esc(other?.event_label || otherId)}</div>
             <button class="mini-button" type="button" data-action="select-dependency" data-id="${esc(dep.dependency_id)}">Open dependency</button>
           </div>
@@ -6536,7 +6556,7 @@ function discoveryPathOptions() {
     pathUseDependencies: true,
     pathUseOntologyBridges: true,
     pathUseContext: false,
-    pathIncludeReview: true,
+    pathIncludeHypothesis: true,
     pathIncludeRejected: false,
     discoveryMode: true
   };
@@ -6582,7 +6602,7 @@ function analyzeHypothesisPath(path, lens = "all") {
   }).length;
   const reviewDependencies = path.edges.filter((edge) => {
     if (edge.kind !== "dependency") return false;
-    return state.globalPathIndexes.dependencyById.get(edge.id)?.tier === "review";
+    return isHypothesisTier(state.globalPathIndexes.dependencyById.get(edge.id)?.tier);
   }).length;
   const lensScore = pathMatchesLens(path, lens) ? 18 : 0;
   const score = Math.max(0,
@@ -6605,7 +6625,7 @@ function analyzeHypothesisPath(path, lens = "all") {
   if (hasOntology) tags.push("normalized ID bridge");
   if (hasDependency) tags.push("event dependency");
   if (hasEvent) tags.push("shared event biology");
-  if (reviewDependencies) tags.push("review-tier evidence");
+  if (reviewDependencies) tags.push("hypothesis-tier evidence");
   if (!direct && (hasOntology || crossPaper || hasDependency)) tags.push("potential novel relation");
   return { score, tags: uniqueStrings(tags), papers: Array.from(papers), direct, crossPaper };
 }
@@ -7307,7 +7327,7 @@ function edgeReportText(edge) {
     return [
       `Dependency: ${clean(dep?.type || edge.label)}`,
       dep?.pmcid ? `paper ${dep.pmcid}` : "",
-      dep?.tier ? `tier ${dep.tier}` : "",
+      dep?.tier ? `tier ${tierLabel(dep.tier)}` : "",
       dep?.confidence ? `confidence ${dep.confidence}` : "",
       dep?.bridge_entities?.length ? `bridge ${dep.bridge_entities.join(", ")}` : "",
       dep?.id ? `record ${dep.id}` : edge.id
@@ -7458,7 +7478,7 @@ function pathOptionsSummary() {
     state.pathUseDependencies ? "dependencies" : "",
     state.pathUseOntologyBridges ? "ontology bridges" : "",
     state.pathUseContext ? "context" : "",
-    state.pathIncludeReview ? "review links" : "",
+    state.pathIncludeHypothesis ? "hypothesis links" : "",
     state.pathIncludeRejected ? "rejected links" : "",
   ].filter(Boolean);
   const visible = active.slice(0, 4);
@@ -7604,7 +7624,7 @@ function currentPathOptions() {
     pathUseDependencies: state.pathUseDependencies,
     pathUseOntologyBridges: state.pathUseOntologyBridges,
     pathUseContext: state.pathUseContext,
-    pathIncludeReview: state.pathIncludeReview,
+    pathIncludeHypothesis: state.pathIncludeHypothesis,
     pathIncludeRejected: state.pathIncludeRejected
   };
 }
@@ -7702,9 +7722,9 @@ function buildPathGraph(options = currentPathOptions()) {
 
   if (options.pathUseDependencies) {
     data.dependencies.forEach((dep) => {
-      if (dep.tier === "review" && !options.pathIncludeReview) return;
+      if (isHypothesisTier(dep.tier) && !options.pathIncludeHypothesis) return;
       if (dep.tier === "rejected" && !options.pathIncludeRejected) return;
-      if (dep.tier !== "accepted" && dep.tier !== "review" && dep.tier !== "rejected") return;
+      if (!["accepted", "hypothesis", "rejected"].includes(canonicalTier(dep.tier))) return;
       addUndirected(`event:${dep.source_event_id}`, `event:${dep.target_event_id}`, {
         kind: "dependency",
         id: dep.id,
@@ -8065,7 +8085,7 @@ function dependencyInspector(dep, sourceRows) {
     <div class="kv">
       <div class="key">Selected</div><div>dependency</div>
       <div class="key">ID</div><div>${esc(dep.dependency_id)}</div>
-      <div class="key">Tier</div><div>${badges([dep.tier], dep.tier)}</div>
+      <div class="key">Tier</div><div>${badges([tierLabel(dep.tier)], tierClass(dep.tier))}</div>
       <div class="key">Type</div><div>${esc(clean(dep.dependency_type))}</div>
       <div class="key">Reason</div><div>${esc(clean(dep.reason_code || "-"))}</div>
       <div class="key">Bridge</div><div>${badges(dep.bridge_entities)}</div>
