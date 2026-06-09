@@ -749,7 +749,8 @@ async function fetchJson(path) {
 
 function normalizePaperRelations(data) {
   const entityById = new Map(asArray(data.entities).map((item) => [item.node_id, item]));
-  const relations = mergeDuplicateRelations(asArray(data.relations), {
+  const rawRelations = asArray(data.relations);
+  const relations = mergeDuplicateRelations(rawRelations, {
     entityById,
     idKey: "record_id",
     subjectKey: "subject_node_id",
@@ -760,12 +761,13 @@ function normalizePaperRelations(data) {
   });
   return {
     ...data,
+    raw_relations: rawRelations,
     relations,
     stats: {
       ...(data.stats || {}),
-      raw_relations: asArray(data.relations).length,
+      raw_relations: rawRelations.length,
       relations: relations.length,
-      merged_duplicate_relations: Math.max(0, asArray(data.relations).length - relations.length)
+      merged_duplicate_relations: Math.max(0, rawRelations.length - relations.length)
     }
   };
 }
@@ -1080,6 +1082,8 @@ function buildIndexes(data) {
   const dependencyById = new Map(data.dependencies.map((item) => [item.dependency_id, item]));
   const entityById = new Map(data.entities.map((item) => [item.node_id, item]));
   const sentenceById = new Map(data.sentences.map((item) => [item.id, item]));
+  const rawRelationById = new Map();
+  const rawRelationsByEvent = new Map();
   const relationsByEvent = new Map();
   const relationsByEntity = new Map();
   const eventsByEntity = new Map();
@@ -1101,6 +1105,11 @@ function buildIndexes(data) {
     });
   });
 
+  asArray(data.raw_relations).forEach((rel) => {
+    if (rel.record_id) rawRelationById.set(rel.record_id, rel);
+    asArray(rel.event_ids).forEach((eventId) => push(rawRelationsByEvent, eventId, rel));
+  });
+
   data.events.forEach((event) => {
     event.participant_node_ids.forEach((nodeId) => push(eventsByEntity, nodeId, event));
   });
@@ -1116,6 +1125,8 @@ function buildIndexes(data) {
     dependencyById,
     entityById,
     sentenceById,
+    rawRelationById,
+    rawRelationsByEvent,
     relationsByEvent,
     relationsByEntity,
     eventsByEntity,
@@ -3347,10 +3358,70 @@ function renderEventMain(event) {
     ${disclosureSection("Relation Hyperedges In This Event", `
       <div class="relation-list">${relations.map((rel) => relationContextRow(rel, { eventId: event.event_id, activeId: focused?.record_id || "" })).join("") || `<div class="compact-card muted">No relations.</div>`}</div>
     `, fmt(relations.length))}
+    ${eventOriginalRelationsDisclosure(event, relations)}
     ${disclosureSection("Dependencies Touching This Event", `
       ${dependencyButtons(deps, event.event_id)}
     `, fmt(deps.length))}
   `;
+}
+
+function eventOriginalRelations(event) {
+  const fromEventIds = asArray(event?.relation_ids)
+    .map((id) => state.indexes?.rawRelationById.get(id))
+    .filter(Boolean);
+  const fromIndex = state.indexes?.rawRelationsByEvent.get(event?.event_id) || [];
+  const rawRelations = fromEventIds.length ? fromEventIds : fromIndex;
+  return uniqueBy(rawRelations, (rel) => rel.record_id || rel.source_relation_id || rel.triple || JSON.stringify(rel));
+}
+
+function eventOriginalRelationsDisclosure(event, dedupedRelations) {
+  const rawRelations = eventOriginalRelations(event);
+  if (!rawRelations.length) return "";
+  const dedupedCount = Number(dedupedRelations?.length || 0);
+  const rawCount = rawRelations.length;
+  const explanation = rawCount === dedupedCount
+    ? "These are the original extracted triples before frontend ontology merging."
+    : `The event title is generated from ${fmt(rawCount)} original extracted triples. The main relation view shows ${fmt(dedupedCount)} deduplicated row${dedupedCount === 1 ? "" : "s"} after exact and ontology-based merging.`;
+  return disclosureSection("Original Extracted Triples Behind Title", `
+    <div class="raw-event-relations">
+      <p class="raw-event-note">${esc(explanation)}</p>
+      <div class="raw-event-relation-list">
+        ${rawRelations.map((rel) => eventRawRelationRow(rel, event.event_id)).join("")}
+      </div>
+    </div>
+  `, `${fmt(rawCount)} original`, false, event.event_id);
+}
+
+function eventRawRelationRow(rel, eventId) {
+  const context = relationTaxonTissueDisplay(rel, "direct") || relationContextDisplay(rel.context);
+  const sentenceIds = asArray(rel.evidence_sentence_ids);
+  const sentenceMeta = sentenceIds.map(sentenceMetadataLine).filter(Boolean).slice(0, 2).join(" ");
+  return `
+    <article class="raw-event-relation-row" data-relation-context-id="${esc(rel.record_id)}" data-relation-event-id="${esc(eventId)}">
+      <div class="raw-event-triple">
+        <span>${esc(rel.subject || "subject")}</span>
+        <strong>${esc(clean(rel.predicate || rel.predicate_class || "relation"))}</strong>
+        <span>${esc(rel.object || "object")}</span>
+      </div>
+      <div class="raw-event-relation-meta">
+        ${sentenceMeta}
+        ${relationEvidenceMode(rel) ? `<span>${esc(clean(relationEvidenceMode(rel)))}</span>` : ""}
+        ${context ? `<span>${esc(context)}</span>` : ""}
+      </div>
+      <button class="mini-button" type="button" data-action="select-relation" data-id="${esc(rel.record_id)}">Open merged row</button>
+    </article>
+  `;
+}
+
+function relationContextDisplay(context) {
+  const values = [];
+  Object.entries(context || {}).forEach(([key, items]) => {
+    asArray(items).forEach((item) => {
+      const text = String(item || "").trim();
+      if (text) values.push(`${clean(key)}: ${text}`);
+    });
+  });
+  return uniqueStrings(values).join("; ");
 }
 
 function eventProvenanceMap(event, relations) {
