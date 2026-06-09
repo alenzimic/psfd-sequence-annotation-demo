@@ -5449,8 +5449,125 @@ body[data-tab="discover"] .main-panel {
 
 .relation-context-summary {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
+}
+
+.relation-context-primary {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid #d8e5e0;
+  border-left-width: 3px;
+  border-radius: 9px;
+  background: #fbfdfc;
+}
+
+.relation-context-primary.context-kind-relation {
+  border-left-color: #7b8f79;
+}
+
+.relation-context-primary.context-kind-event {
+  border-left-color: #2b7a78;
+}
+
+.relation-context-primary.context-kind-linked {
+  border-left-color: #9a7a42;
+}
+
+.relation-context-primary.context-kind-agreement {
+  border-left-color: #4169a8;
+}
+
+.context-primary-head {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.context-primary-head span {
+  min-width: 0;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.context-primary-head i {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #879891;
+}
+
+.context-kind-relation .context-primary-head i {
+  background: #7b8f79;
+}
+
+.context-kind-event .context-primary-head i {
+  background: #2b7a78;
+}
+
+.context-kind-linked .context-primary-head i {
+  background: #9a7a42;
+}
+
+.context-kind-agreement .context-primary-head i {
+  background: #4169a8;
+}
+
+.context-primary-head strong {
+  color: #22362f;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.context-primary-head small {
+  color: #70817a;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.context-source-compare {
+  min-width: 0;
+}
+
+.context-source-compare summary {
+  width: max-content;
+  max-width: 100%;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border: 1px solid #d1ded9;
+  border-radius: 999px;
+  background: #f7faf8;
+  color: #435750;
+  font-size: 10.5px;
+  font-weight: 850;
+  cursor: pointer;
+  list-style: none;
+}
+
+.context-source-compare summary::-webkit-details-marker {
+  display: none;
+}
+
+.context-source-compare[open] summary {
+  border-color: #96b9b0;
+  background: #e9f4f0;
+  color: var(--accent-dark);
+}
+
+.context-source-stack {
+  display: grid;
+  gap: 6px;
+  margin-top: 7px;
 }
 
 .relation-output-context-bundle {

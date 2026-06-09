@@ -5045,18 +5045,56 @@ function relationOutputContextCell(value, emptyText) {
 }
 
 function relationOutputContextSummary(row) {
-  const bundles = [
-    ["relation", "Directly stated", "attached to this triple", row.context, "No explicit relation context."],
-    ["event", "Same event", "shared by event triples", row.event_taxon_tissue_context, "No event-propagated taxon/tissue context."],
-    ["linked", "Same entity elsewhere", "propagated from other triples", row.entity_linked_taxon_tissue_context, "No entity-linked taxon/tissue context."],
-    ["agreement", "Best supported", "overlap or fallback", row.overlap_taxon_tissue_context, "No context overlap."],
-  ];
-  const populated = bundles.filter(([, , , value]) => splitRelationOutputItems(value).length);
+  const bundles = relationOutputContextBundles(row);
+  const populated = bundles.filter((bundle) => splitRelationOutputItems(bundle.value).length);
   if (!populated.length) return `<span class="muted tiny">No context assigned.</span>`;
+  const preferredOrder = ["agreement", "relation", "event", "linked"];
+  const primary = preferredOrder
+    .map((kind) => populated.find((bundle) => bundle.kind === kind))
+    .find(Boolean) || populated[0];
   return `
     <div class="relation-context-summary">
-      ${populated.map(([kind, label, hint, value]) => relationOutputContextBundle(kind, label, hint, value, 2)).join("")}
+      ${relationOutputPrimaryContext(primary)}
+      ${populated.length > 1 ? relationOutputSourceCompare(populated) : ""}
     </div>
+  `;
+}
+
+function relationOutputContextBundles(row) {
+  return [
+    { kind: "relation", label: "Directly stated", hint: "attached to this triple", value: row.context, empty: "No explicit relation context." },
+    { kind: "event", label: "Same event", hint: "shared by event triples", value: row.event_taxon_tissue_context, empty: "No event-propagated taxon/tissue context." },
+    { kind: "linked", label: "Same entity elsewhere", hint: "propagated from other triples", value: row.entity_linked_taxon_tissue_context, empty: "No entity-linked taxon/tissue context." },
+    { kind: "agreement", label: "Best supported", hint: "overlap or fallback", value: row.overlap_taxon_tissue_context, empty: "No context overlap." },
+  ];
+}
+
+function relationOutputPrimaryContext(bundle) {
+  const items = splitRelationOutputItems(bundle.value);
+  const shown = items.slice(0, 3);
+  const hidden = items.slice(3);
+  return `
+    <div class="relation-context-primary ${esc(`context-kind-${bundle.kind}`)}">
+      <div class="context-primary-head">
+        <span><i aria-hidden="true"></i><strong>Context to use</strong></span>
+        <small>${esc(bundle.label)} source</small>
+      </div>
+      <div class="context-bundle-chips">
+        ${shown.map(relationOutputChip).join("")}
+        ${hidden.length ? relationOutputMoreDetails(hidden) : ""}
+      </div>
+    </div>
+  `;
+}
+
+function relationOutputSourceCompare(bundles) {
+  return `
+    <details class="context-source-compare">
+      <summary>Compare ${fmt(bundles.length)} sources</summary>
+      <div class="context-source-stack">
+        ${bundles.map((bundle) => relationOutputContextBundle(bundle.kind, bundle.label, bundle.hint, bundle.value, 2)).join("")}
+      </div>
+    </details>
   `;
 }
 
