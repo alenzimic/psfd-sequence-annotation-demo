@@ -4947,10 +4947,10 @@ function relationDownloadSchema() {
   const columns = [
     ["compound_or_gene_name", "Query entity"],
     ["relation", "Extracted relation"],
-    ["context", "Relation context"],
-    ["event_taxon_tissue_context", "Event context"],
-    ["entity_linked_taxon_tissue_context", "Entity-linked context"],
-    ["overlap_taxon_tissue_context", "Context agreement"],
+    ["context", "Directly stated context"],
+    ["event_taxon_tissue_context", "Context from same event"],
+    ["entity_linked_taxon_tissue_context", "Context from same entity elsewhere"],
+    ["overlap_taxon_tissue_context", "Best-supported context"],
     ["attribute_type", "Attribute type"],
     ["ontology_normalized_relation", "Ontology-normalized relation"],
   ];
@@ -4988,8 +4988,8 @@ function relationExtractionResultsTable(rows) {
             <th>Query</th>
             <th>Relation</th>
             <th>Attribute</th>
-            <th>Context summary</th>
-            <th>Full row</th>
+            <th>Context sources</th>
+            <th>All details</th>
           </tr>
         </thead>
         <tbody>
@@ -5034,27 +5034,33 @@ function relationOutputContextCell(value, emptyText) {
 
 function relationOutputContextSummary(row) {
   const bundles = [
-    ["relation", "Relation", row.context, "No explicit relation context."],
-    ["event", "Event", row.event_taxon_tissue_context, "No event-propagated taxon/tissue context."],
-    ["linked", "Linked", row.entity_linked_taxon_tissue_context, "No entity-linked taxon/tissue context."],
-    ["agreement", "Agreement", row.overlap_taxon_tissue_context, "No context overlap."],
+    ["relation", "Directly stated", "attached to this triple", row.context, "No explicit relation context."],
+    ["event", "Same event", "shared by event triples", row.event_taxon_tissue_context, "No event-propagated taxon/tissue context."],
+    ["linked", "Same entity elsewhere", "propagated from other triples", row.entity_linked_taxon_tissue_context, "No entity-linked taxon/tissue context."],
+    ["agreement", "Best supported", "overlap or fallback", row.overlap_taxon_tissue_context, "No context overlap."],
   ];
-  const populated = bundles.filter(([, , value]) => splitRelationOutputItems(value).length);
+  const populated = bundles.filter(([, , , value]) => splitRelationOutputItems(value).length);
   if (!populated.length) return `<span class="muted tiny">No context assigned.</span>`;
   return `
     <div class="relation-context-summary">
-      ${populated.map(([kind, label, value]) => relationOutputContextBundle(kind, label, value, 2)).join("")}
+      ${populated.map(([kind, label, hint, value]) => relationOutputContextBundle(kind, label, hint, value, 2)).join("")}
     </div>
   `;
 }
 
-function relationOutputContextBundle(kind, label, value, limit = 2) {
+function relationOutputContextBundle(kind, label, hint, value, limit = 2) {
   const items = splitRelationOutputItems(value);
   const shown = items.slice(0, limit);
   const hidden = items.slice(limit);
   return `
     <div class="relation-output-context-bundle ${esc(`context-kind-${kind}`)}">
-      <span class="context-bundle-label"><i aria-hidden="true"></i>${esc(label)}</span>
+      <span class="context-bundle-label">
+        <i aria-hidden="true"></i>
+        <span>
+          <strong>${esc(label)}</strong>
+          <small>${esc(hint)}</small>
+        </span>
+      </span>
       <div class="context-bundle-chips">
         ${shown.map(relationOutputChip).join("")}
         ${hidden.length ? relationOutputMoreDetails(hidden) : ""}
@@ -5076,14 +5082,14 @@ function relationOutputMoreDetails(items) {
 
 function relationOutputRowDetails(row) {
   const details = [
-    ["Relation context", row.context, "No explicit relation context."],
-    ["Event taxon/tissue", row.event_taxon_tissue_context, "No event-propagated taxon/tissue context."],
-    ["Entity-linked taxon/tissue", row.entity_linked_taxon_tissue_context, "No entity-linked taxon/tissue context."],
-    ["Agreement", row.overlap_taxon_tissue_context, "No context overlap."],
+    ["Directly stated context", row.context, "No explicit relation context."],
+    ["Context from same event", row.event_taxon_tissue_context, "No event-propagated taxon/tissue context."],
+    ["Context from same entity elsewhere", row.entity_linked_taxon_tissue_context, "No entity-linked taxon/tissue context."],
+    ["Best-supported context", row.overlap_taxon_tissue_context, "No context overlap."],
   ];
   return `
     <details class="relation-output-row-details">
-      <summary>Details</summary>
+      <summary>View all</summary>
       <div class="relation-output-detail-grid">
         ${details.map(([label, value, emptyText]) => `
           <div class="relation-output-detail-block">
