@@ -5034,31 +5034,43 @@ function relationOutputContextCell(value, emptyText) {
 
 function relationOutputContextSummary(row) {
   const bundles = [
-    ["Relation", row.context, "No explicit relation context."],
-    ["Event", row.event_taxon_tissue_context, "No event-propagated taxon/tissue context."],
-    ["Linked", row.entity_linked_taxon_tissue_context, "No entity-linked taxon/tissue context."],
-    ["Agreement", row.overlap_taxon_tissue_context, "No context overlap."],
+    ["relation", "Relation", row.context, "No explicit relation context."],
+    ["event", "Event", row.event_taxon_tissue_context, "No event-propagated taxon/tissue context."],
+    ["linked", "Linked", row.entity_linked_taxon_tissue_context, "No entity-linked taxon/tissue context."],
+    ["agreement", "Agreement", row.overlap_taxon_tissue_context, "No context overlap."],
   ];
-  const populated = bundles.filter(([, value]) => splitRelationOutputItems(value).length);
+  const populated = bundles.filter(([, , value]) => splitRelationOutputItems(value).length);
   if (!populated.length) return `<span class="muted tiny">No context assigned.</span>`;
   return `
     <div class="relation-context-summary">
-      ${populated.map(([label, value]) => relationOutputContextBundle(label, value, 2)).join("")}
+      ${populated.map(([kind, label, value]) => relationOutputContextBundle(kind, label, value, 2)).join("")}
     </div>
   `;
 }
 
-function relationOutputContextBundle(label, value, limit = 2) {
+function relationOutputContextBundle(kind, label, value, limit = 2) {
   const items = splitRelationOutputItems(value);
   const shown = items.slice(0, limit);
+  const hidden = items.slice(limit);
   return `
-    <div class="relation-output-context-bundle">
-      <span class="context-bundle-label">${esc(label)}</span>
+    <div class="relation-output-context-bundle ${esc(`context-kind-${kind}`)}">
+      <span class="context-bundle-label"><i aria-hidden="true"></i>${esc(label)}</span>
       <div class="context-bundle-chips">
         ${shown.map(relationOutputChip).join("")}
-        ${items.length > shown.length ? `<span class="relation-output-chip more-chip">+${fmt(items.length - shown.length)}</span>` : ""}
+        ${hidden.length ? relationOutputMoreDetails(hidden) : ""}
       </div>
     </div>
+  `;
+}
+
+function relationOutputMoreDetails(items) {
+  return `
+    <details class="relation-output-more-context">
+      <summary>+${fmt(items.length)} more</summary>
+      <div class="more-context-chip-list">
+        ${items.map(relationOutputChip).join("")}
+      </div>
+    </details>
   `;
 }
 
