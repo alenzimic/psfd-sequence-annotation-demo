@@ -5671,6 +5671,9 @@ body[data-tab="discover"] .main-panel {
 
 .relation-output-chip {
   max-width: 100%;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
   padding: 3px 7px;
   border: 1px solid #d3e0db;
   border-radius: 999px;
@@ -5682,9 +5685,51 @@ body[data-tab="discover"] .main-panel {
   overflow-wrap: anywhere;
 }
 
+.relation-output-chip em {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .74);
+  color: #53655f;
+  font-size: 8.5px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.relation-output-chip.context-entity-species {
+  border-color: #b7d2c3;
+  background: #f0f8f3;
+  color: #214a34;
+}
+
+.relation-output-chip.context-entity-species em {
+  color: #286041;
+}
+
+.relation-output-chip.context-entity-tissue {
+  border-color: #b9cfe4;
+  background: #f1f7fc;
+  color: #263f5c;
+}
+
+.relation-output-chip.context-entity-tissue em {
+  color: #315d88;
+}
+
+.relation-output-chip.context-entity-other {
+  border-color: #ded2ba;
+  background: #fbf7ee;
+  color: #4d3c1e;
+}
+
+.relation-output-chip.context-entity-other em {
+  color: #765927;
+}
+
 .relation-output-chip.context-only {
   border-style: dashed;
-  background: #fbf8f2;
 }
 
 .table-scroll {

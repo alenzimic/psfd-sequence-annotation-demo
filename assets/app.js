@@ -397,6 +397,11 @@ function installGlobalHandlers() {
   });
 
   document.addEventListener("click", (event) => {
+    const clicked = event.target instanceof Element ? event.target : event.target?.parentElement;
+    closeRelationOutputMoreMenus(clicked);
+  }, true);
+
+  document.addEventListener("click", (event) => {
     if (event.__psfdActionHandled) return;
     const clicked = event.target instanceof Element ? event.target : event.target?.parentElement;
     if (!clicked) return;
@@ -547,6 +552,13 @@ function applyViewState(view) {
 function returnControl() {
   if (!state.returnStack.length) return "";
   return `<button class="return-button" type="button" data-action="return-view">Return</button>`;
+}
+
+function closeRelationOutputMoreMenus(clicked) {
+  document.querySelectorAll(".relation-output-more-context[open]").forEach((details) => {
+    if (clicked && details.contains(clicked)) return;
+    details.removeAttribute("open");
+  });
 }
 
 function annotationControlSelector() {
@@ -5115,7 +5127,26 @@ function splitRelationOutputItems(value) {
 
 function relationOutputChip(item) {
   const contextOnly = item.includes("*");
-  return `<span class="relation-output-chip ${contextOnly ? "context-only" : ""}" title="${contextOnly ? "Added from broader context only" : ""}">${esc(item)}</span>`;
+  const kind = relationOutputContextKind(item);
+  const title = [
+    kind.description,
+    contextOnly ? "Added from broader context only" : ""
+  ].filter(Boolean).join(". ");
+  return `<span class="relation-output-chip context-entity-${esc(kind.key)} ${contextOnly ? "context-only" : ""}" title="${esc(title)}"><em>${esc(kind.label)}</em>${esc(item)}</span>`;
+}
+
+function relationOutputContextKind(item) {
+  const text = String(item || "").toLowerCase();
+  if (/ncbitaxon:\d+/i.test(item)) {
+    return { key: "species", label: "Species", description: "Species or taxon context" };
+  }
+  if (
+    /\b(?:po|uberon|bto|cl):\d+/i.test(item) ||
+    /\b(leaf|leaves|root|roots|shoot|shoots|stem|stems|seedling|seedlings|seed|seeds|flower|flowers|fruit|fruits|tuber|tubers|hypocotyl|cotyledon|chloroplast|tissue|tissues|cell|cells|membrane|organ|organs|stage|stages|vegetative|reproductive|photosynthetic apparatus)\b/i.test(text)
+  ) {
+    return { key: "tissue", label: "Tissue/site", description: "Tissue, anatomy, cellular location, or stage context" };
+  }
+  return { key: "other", label: "Other", description: "Other experimental or biological context" };
 }
 
 function sequenceMatchCard(match) {
