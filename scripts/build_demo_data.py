@@ -28,7 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = Path(os.environ.get("PSFD_SOURCE_ROOT", "/local/storage/alen/projects/1_PSFD")).expanduser()
 
 HYPERGRAPH_DIR = SOURCE_ROOT / "output" / "7_relations_grouping" / "720_hypergraph"
-SENTENCE_DIR = SOURCE_ROOT / "output" / "1_retrieval" / "110_bioc_sentences"
+SENTENCE_DIR = SOURCE_ROOT / "output" / "1_retrieval" / "111_bioc_sentences_spacy"
 TRIPLES_EVALUATION_DIR = SOURCE_ROOT / "output" / "4_triples_evaluation" / "410_LLM_triples_evaluation"
 NORMALIZATION_DIR = SOURCE_ROOT / "output" / "9_entity_normalization_llm" / "920_normalized_entities"
 COMPOUND_CLASSIFICATION_DIR = SOURCE_ROOT / "output" / "9_entity_normalization_llm" / "930_compound_classifications"
@@ -1889,7 +1889,7 @@ def main() -> None:
 
     SOURCE_ROOT = args.source_root.expanduser().resolve()
     HYPERGRAPH_DIR = SOURCE_ROOT / "output" / "7_relations_grouping" / "720_hypergraph"
-    SENTENCE_DIR = SOURCE_ROOT / "output" / "1_retrieval" / "110_bioc_sentences"
+    SENTENCE_DIR = SOURCE_ROOT / "output" / "1_retrieval" / "111_bioc_sentences_spacy"
     TRIPLES_EVALUATION_DIR = SOURCE_ROOT / "output" / "4_triples_evaluation" / "410_LLM_triples_evaluation"
     NORMALIZATION_DIR = SOURCE_ROOT / "output" / "9_entity_normalization_llm" / "920_normalized_entities"
     COMPOUND_CLASSIFICATION_DIR = SOURCE_ROOT / "output" / "9_entity_normalization_llm" / "930_compound_classifications"
