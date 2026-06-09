@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import os
 import re
 import shutil
+import subprocess
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -153,9 +155,33 @@ GENE_PROTEIN_NORMALIZATION_FIELDS = [
 ]
 
 
+def source_path(path: Path) -> Path:
+    """Return an existing source path, accepting storage-efficient .zst output."""
+    if path.exists():
+        return path
+    compressed = Path(f"{path}.zst")
+    if compressed.exists():
+        return compressed
+    return path
+
+
+def source_exists(path: Path) -> bool:
+    return source_path(path).exists()
+
+
+def read_source_text(path: Path) -> str:
+    resolved = source_path(path)
+    if resolved.suffix == ".zst":
+        return subprocess.check_output(["zstd", "-dc", str(resolved)], text=True)
+    return resolved.read_text(encoding="utf-8")
+
+
 def load_json(path: Path) -> Any:
-    with path.open(encoding="utf-8") as handle:
-        return json.load(handle)
+    return json.loads(read_source_text(path))
+
+
+def load_csv_rows(path: Path) -> list[dict[str, str]]:
+    return list(csv.DictReader(io.StringIO(read_source_text(path))))
 
 
 def write_json(path: Path, payload: Any) -> None:
@@ -445,7 +471,7 @@ def round_float(value: Any, digits: int = 4) -> float | str:
 
 def article_metadata(pmcid: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     path = SENTENCE_DIR / f"{pmcid}.json"
-    if not path.exists():
+    if not source_exists(path):
         return {"pmcid": pmcid}, {}
 
     data = load_json(path)
@@ -549,7 +575,7 @@ def evidence_context_sentences(
 def load_relation_evaluations(pmcid: str) -> dict[str, dict[str, Any]]:
     """Load Step 4 relation evaluation metadata by source relation ID."""
     path = TRIPLES_EVALUATION_DIR / f"{pmcid}.json"
-    if not path.exists():
+    if not source_exists(path):
         return {}
     try:
         payload = load_json(path)
@@ -719,13 +745,12 @@ def slim_compound_classification(raw: dict[str, Any]) -> dict[str, Any]:
 def load_compound_classifications(pmcid: str) -> dict[str, dict[str, Any]]:
     path = COMPOUND_CLASSIFICATION_DIR / f"{pmcid}.json"
     rows: list[dict[str, Any]] = []
-    if path.exists():
+    if source_exists(path):
         rows = [row for row in load_json(path).get("rows", []) if isinstance(row, dict)]
     else:
         csv_path = COMPOUND_CLASSIFICATION_DIR / f"{pmcid}.compound_classifications.csv"
-        if csv_path.exists():
-            with csv_path.open(encoding="utf-8", newline="") as handle:
-                rows = list(csv.DictReader(handle))
+        if source_exists(csv_path):
+            rows = load_csv_rows(csv_path)
 
     by_key: dict[str, dict[str, Any]] = {}
     for raw in rows:
@@ -985,9 +1010,8 @@ def build_gene_protein_profile(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def load_gene_protein_normalizations(pmcid: str) -> dict[str, dict[str, Any]]:
     csv_path = GENE_PROTEIN_NORMALIZATION_DIR / f"{pmcid}.gene_protein_normalizations.csv"
     rows: list[dict[str, Any]] = []
-    if csv_path.exists():
-        with csv_path.open(encoding="utf-8", newline="") as handle:
-            rows = list(csv.DictReader(handle))
+    if source_exists(csv_path):
+        rows = load_csv_rows(csv_path)
 
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for raw in rows:
@@ -1231,7 +1255,7 @@ def load_entities(pmcid: str, hypergraph: dict[str, Any]) -> dict[str, dict[str,
     compounds_by_key = load_compound_classifications(pmcid)
     gene_proteins_by_key = load_gene_protein_normalizations(pmcid)
 
-    if path.exists():
+    if source_exists(path):
         for raw in load_json(path).get("entities", []):
             entity = slim_entity(raw, fallback_by_node.get(raw.get("node_id", "")))
             attach_compound_classification(entity, compounds_by_key)
@@ -1445,7 +1469,7 @@ def compact_context_propagation(row: dict[str, Any] | None) -> dict[str, Any]:
 
 def load_context_propagation(pmcid: str) -> dict[str, dict[str, Any]]:
     path = CONTEXT_PROPAGATION_DIR / f"{pmcid}.relation_context_propagation.json"
-    if not path.exists():
+    if not source_exists(path):
         return {}
     payload = load_json(path)
     return {
@@ -1782,7 +1806,11 @@ def build(outdir: Path) -> dict[str, Any]:
         shutil.rmtree(data_dir)
     (data_dir / "papers").mkdir(parents=True, exist_ok=True)
 
-    papers = sorted(path.stem for path in HYPERGRAPH_DIR.glob("PMC*.json"))
+    papers = sorted({
+        path.name.split(".", 1)[0]
+        for path in HYPERGRAPH_DIR.glob("PMC*.json*")
+        if path.name.endswith(".json") or path.name.endswith(".json.zst")
+    })
     paper_summaries: list[dict[str, Any]] = []
     paper_payloads: list[dict[str, Any]] = []
     totals: Counter[str] = Counter()
