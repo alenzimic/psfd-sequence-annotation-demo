@@ -5075,7 +5075,7 @@ body[data-tab="discover"] .main-panel {
 .relation-extraction-panel {
   display: grid;
   gap: 14px;
-  margin-top: 14px;
+  margin-top: 0;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -5194,6 +5194,21 @@ body[data-tab="discover"] .main-panel {
   gap: 12px;
 }
 
+.relationship-empty-state {
+  display: grid;
+  gap: 3px;
+}
+
+.relationship-empty-state strong {
+  color: #20312b;
+  font-size: 12.5px;
+}
+
+.relationship-empty-state span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .sequence-match-strip,
 .relation-output-table {
   display: grid;
@@ -5208,6 +5223,168 @@ body[data-tab="discover"] .main-panel {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 8px;
+}
+
+.relation-output-help {
+  border: 1px solid #d9e6e0;
+  border-radius: 8px;
+  background: #f8fbfa;
+}
+
+.relation-output-help summary {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 7px 10px;
+  color: #2f453d;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  cursor: pointer;
+  list-style: none;
+}
+
+.relation-output-help summary::-webkit-details-marker {
+  display: none;
+}
+
+.relation-output-help[open] summary {
+  border-bottom: 1px solid #dbe7e2;
+}
+
+.relation-output-help-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  padding: 0 10px 10px;
+}
+
+.relation-output-help-grid div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  border-left: 1px solid #e1ebe6;
+}
+
+.relation-output-help-grid div:first-child {
+  border-left: 0;
+}
+
+.relation-output-help-grid strong {
+  color: #20312b;
+  font-size: 11px;
+}
+
+.relation-output-help-grid span {
+  color: #61736c;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.relation-output-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(130px, 1fr)) repeat(2, max-content);
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid #dfe9e5;
+  border-radius: 8px;
+  background: #fcfefd;
+}
+
+.relation-output-select {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.relation-output-select span,
+.relation-output-toggle span {
+  color: #40564e;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.relation-output-select select {
+  min-width: 0;
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid #c8d8d2;
+  border-radius: 7px;
+  background: #fff;
+  color: #20312b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.relation-output-toggle {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid #d8e5e0;
+  border-radius: 999px;
+  background: #f7fbf9;
+}
+
+.relation-output-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+.relation-query-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.relation-query-group {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.relation-query-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid #dce8e3;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #f6fbf8, #fbfdfc);
+}
+
+.relation-query-group-head > div {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.relation-query-group-head strong {
+  color: #17382f;
+  font-size: 14px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.relation-query-group-head span {
+  padding: 3px 8px;
+  border: 1px solid #d3e1dc;
+  border-radius: 999px;
+  background: #fff;
+  color: #52665e;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 .sequence-match-card {
@@ -5346,18 +5523,14 @@ body[data-tab="discover"] .main-panel {
 
 .clean-relation-output-table {
   width: 100%;
-  min-width: 980px;
+  min-width: 860px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12px;
 }
 
-.clean-relation-output-table col.col-query {
-  width: 150px;
-}
-
 .clean-relation-output-table col.col-relation {
-  width: 300px;
+  width: 310px;
 }
 
 .clean-relation-output-table col.col-attribute {
@@ -5896,6 +6069,26 @@ body[data-tab="discover"] .main-panel {
 @media (max-width: 900px) {
   .dual-query-grid {
     grid-template-columns: 1fr;
+  }
+
+  .relation-output-help-grid,
+  .relation-output-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .relation-output-help-grid div,
+  .relation-output-help-grid div:first-child {
+    border-top: 1px solid #e1ebe6;
+    border-left: 0;
+  }
+
+  .relation-output-help-grid div:first-child {
+    border-top: 0;
+  }
+
+  .relation-output-toggle {
+    width: max-content;
+    max-width: 100%;
   }
 
   .or-divider {

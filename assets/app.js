@@ -62,6 +62,11 @@ const state = {
   relationExtractionResults: [],
   relationSequenceMatches: [],
   relationExtractionStatus: "",
+  relationOutputAttributeFilter: "all",
+  relationOutputSpeciesFilter: "all",
+  relationOutputTissueFilter: "all",
+  relationOutputDirectOnly: false,
+  relationOutputBestContextOnly: false,
   sequenceIndex: null,
   sequenceIndexLoading: false,
   sequenceIndexPromise: null,
@@ -4761,80 +4766,18 @@ function renderDiscoverWorkbench() {
     <section class="annotation-page">
       <div class="hero-title">
         <div>
-          <h2>PSFD Annotation Workspace</h2>
-          <p>Paste genes, proteins, compounds, aliases, or ontology IDs to get concise PSFD annotations and research signals from all papers.</p>
+          <h2>PSFD Relationship Annotation</h2>
+          <p>Paste compound names or protein FASTA sequences, choose the biological attributes you need, then download endpoint relationships with context and ontology-normalized triples.</p>
         </div>
         <div data-annotation-stats>${badges(ready ? [`${fmt(stats.entities || 0)} entities`, `${fmt(stats.concepts || 0)} ontology IDs`, `${fmt(state.manifest?.papers?.length || 0)} papers`] : ["loading database"])}</div>
       </div>
 
-      <div class="annotation-workflow">
-        <section class="annotation-input-panel">
-          <div class="annotation-panel-head">
-            <span>01</span>
-            <div>
-              <h3>Input list</h3>
-              <small>One query per line</small>
-            </div>
-          </div>
-          <textarea id="annotationInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Solyc09g014280&#10;StWRKY65&#10;phenylpropanoid pathway&#10;piperonylic acid">${esc(state.annotationInput)}</textarea>
-          <div class="annotation-examples">
-            ${annotationExampleButton("Tomato ASAT gene", "Solyc09g014280")}
-            ${annotationExampleButton("Potato WRKY gene", "StWRKY65")}
-            ${annotationExampleButton("Immune pathways", "pathogen-associated molecular pattern receptor signaling pathway\nphenylpropanoid biosynthesis\nplant-type hypersensitive response")}
-            ${annotationExampleButton("Compounds", "piperonylic acid\nGABA\nABA")}
-            ${annotationExampleButton("Mixed list", "Solyc09g014280\nStWRKY65\nphenylpropanoid pathway\npiperonylic acid\nthermotolerance")}
-          </div>
-          <div class="annotation-actions">
-            <button class="mini-button primary-action" type="button" data-annotation-action="annotate">Annotate</button>
-            <button class="mini-button" type="button" data-annotation-action="download-annotations" ${state.annotationResults.length ? "" : "disabled"}>Download annotations</button>
-            <button class="mini-button" type="button" data-annotation-action="download-enrichment" ${state.annotationEnrichment.length ? "" : "disabled"}>Download batch overview</button>
-          </div>
-          <div class="annotation-status">${esc(state.annotationStatus || (ready ? "Paste or type a query, then click Annotate." : "Loading annotation database"))}</div>
-        </section>
-
-        <section class="annotation-output-panel">
-          <div class="annotation-panel-head">
-            <span>02</span>
-            <div>
-              <h3>Annotations</h3>
-              <small>${annotationResultSummary()}</small>
-            </div>
-          </div>
-          ${renderAnnotationResults()}
-        </section>
-
-        <section class="annotation-output-panel enrichment-panel">
-          <div class="annotation-panel-head">
-            <span>03</span>
-            <div>
-              <h3>Batch overview</h3>
-              <small>Shared traits, contexts, and metadata across submitted entities</small>
-            </div>
-          </div>
-          ${renderEnrichmentPanel()}
-        </section>
-
-        <section class="simple-advanced-nav">
-          <div>
-            <h3>Evidence browser</h3>
-            <small>For deeper inspection after annotation</small>
-          </div>
-          <div>
-            <button type="button" data-annotation-tab="paths">Hypothesis routes</button>
-            <button type="button" data-annotation-tab="entities">Entities</button>
-            <button type="button" data-annotation-tab="dependencies">Dependencies</button>
-            <button type="button" data-annotation-tab="events">Events</button>
-            <button type="button" data-annotation-tab="relations">Relations</button>
-          </div>
-        </section>
-      </div>
-
       <section class="relation-extraction-panel">
         <div class="annotation-panel-head">
-          <span>04</span>
+          <span>01</span>
           <div>
             <h3>Compound and FASTA relationship extraction</h3>
-            <small>Retrieves endpoint triples from the bundled PSFD data file. FASTA queries use browser-side approximate matching against ${fmt(sequenceStats.record_count || 0)} PSFD-linked protein sequences.</small>
+            <small>Endpoint triples from PSFD. FASTA matching runs in the browser against ${fmt(sequenceStats.record_count || 0)} PSFD-linked protein sequences.</small>
           </div>
         </div>
         <div class="dual-query-grid">
@@ -4923,9 +4866,15 @@ function prepareSequenceRecord(record) {
 
 function renderRelationExtractionResults() {
   if (!state.relationExtractionResults.length && !state.relationSequenceMatches.length) {
-    return `<div class="annotation-empty compact">Results will appear here and can be downloaded as a tab-delimited file.</div>`;
+    return `
+      <div class="annotation-empty compact relationship-empty-state">
+        <strong>Ready for extraction</strong>
+        <span>Submit compound names or FASTA sequences to see grouped relationships. The download keeps the full tab-delimited file.</span>
+      </div>
+    `;
   }
-  const rows = state.relationExtractionResults.slice(0, 80);
+  const filteredRows = relationFilteredExtractionResults();
+  const rows = filteredRows.slice(0, 80);
   return `
     <div class="relation-extraction-results">
       ${state.relationSequenceMatches.length ? `
@@ -4943,15 +4892,143 @@ function renderRelationExtractionResults() {
         <div class="annotation-section-head">
           <div>
             <h5>Relationship results</h5>
-            <small>Readable preview. The download keeps the exact tab-delimited columns.</small>
+            <small>Grouped by query. Use filters for review; download keeps every exact tab-delimited column.</small>
           </div>
-          <span>${fmt(state.relationExtractionResults.length)} row${state.relationExtractionResults.length === 1 ? "" : "s"}</span>
+          <span>${fmt(filteredRows.length)} of ${fmt(state.relationExtractionResults.length)} row${state.relationExtractionResults.length === 1 ? "" : "s"}</span>
         </div>
+        ${relationOutputHelpDrawer()}
+        ${relationOutputFilters()}
         ${relationDownloadSchema()}
-        ${relationExtractionResultsTable(rows)}
-        ${state.relationExtractionResults.length > rows.length ? `<p class="muted tiny">Showing first ${fmt(rows.length)} rows. The download includes all rows.</p>` : ""}
+        ${rows.length ? relationExtractionGroupedResults(rows) : `<div class="annotation-empty compact">No rows match the active filters.</div>`}
+        ${filteredRows.length > rows.length ? `<p class="muted tiny">Showing first ${fmt(rows.length)} filtered rows. The download includes all extracted rows.</p>` : ""}
       </section>
     </div>
+  `;
+}
+
+function relationOutputHelpDrawer() {
+  return `
+    <details class="relation-output-help">
+      <summary>How to read this table</summary>
+      <div class="relation-output-help-grid">
+        <div><strong>Query</strong><span>The submitted compound or the closest PSFD-linked protein matched from FASTA.</span></div>
+        <div><strong>Relation</strong><span>A PSFD triple where the query appears as entity 1 or entity 2.</span></div>
+        <div><strong>Attribute</strong><span>The biological category of the other endpoint, filtered by your selected attributes.</span></div>
+        <div><strong>Context to use</strong><span>The best compact context view. Open Compare sources to audit relation, event, and entity-linked context.</span></div>
+      </div>
+    </details>
+  `;
+}
+
+function relationOutputFilters() {
+  if (!state.relationExtractionResults.length) return "";
+  const options = relationOutputFilterOptions(state.relationExtractionResults);
+  return `
+    <div class="relation-output-filters" aria-label="Relationship output filters">
+      ${relationOutputSelect("Attribute", "relationOutputAttributeFilter", options.attributes)}
+      ${relationOutputSelect("Species", "relationOutputSpeciesFilter", options.species)}
+      ${relationOutputSelect("Tissue/site", "relationOutputTissueFilter", options.tissues)}
+      <label class="relation-output-toggle">
+        <input type="checkbox" data-state-key="relationOutputDirectOnly" ${state.relationOutputDirectOnly ? "checked" : ""}>
+        <span>Direct context only</span>
+      </label>
+      <label class="relation-output-toggle">
+        <input type="checkbox" data-state-key="relationOutputBestContextOnly" ${state.relationOutputBestContextOnly ? "checked" : ""}>
+        <span>Has best context</span>
+      </label>
+    </div>
+  `;
+}
+
+function relationOutputSelect(label, key, values) {
+  return `
+    <label class="relation-output-select">
+      <span>${esc(label)}</span>
+      <select data-state-key="${esc(key)}">
+        <option value="all">All</option>
+        ${values.map((value) => `<option value="${esc(value)}" ${state[key] === value ? "selected" : ""}>${esc(value)}</option>`).join("")}
+      </select>
+    </label>
+  `;
+}
+
+function relationOutputFilterOptions(rows) {
+  const attributes = uniqueStrings(rows.map((row) => row.attribute_type).filter(Boolean)).sort((a, b) => a.localeCompare(b));
+  const species = uniqueStrings(rows.flatMap((row) => relationOutputContextItemsByKind(row, "species"))).sort((a, b) => a.localeCompare(b));
+  const tissues = uniqueStrings(rows.flatMap((row) => relationOutputContextItemsByKind(row, "tissue"))).sort((a, b) => a.localeCompare(b));
+  return { attributes, species, tissues };
+}
+
+function resetRelationOutputFilters() {
+  state.relationOutputAttributeFilter = "all";
+  state.relationOutputSpeciesFilter = "all";
+  state.relationOutputTissueFilter = "all";
+  state.relationOutputDirectOnly = false;
+  state.relationOutputBestContextOnly = false;
+}
+
+function relationFilteredExtractionResults() {
+  return state.relationExtractionResults.filter((row) => {
+    if (state.relationOutputAttributeFilter !== "all" && row.attribute_type !== state.relationOutputAttributeFilter) return false;
+    if (state.relationOutputSpeciesFilter !== "all" && !relationOutputContextItemsByKind(row, "species").includes(state.relationOutputSpeciesFilter)) return false;
+    if (state.relationOutputTissueFilter !== "all" && !relationOutputContextItemsByKind(row, "tissue").includes(state.relationOutputTissueFilter)) return false;
+    if (state.relationOutputDirectOnly && !splitRelationOutputItems(row.context).length) return false;
+    if (state.relationOutputBestContextOnly && !relationOutputBestContextItems(row).length) return false;
+    return true;
+  });
+}
+
+function relationOutputContextItemsByKind(row, kind) {
+  return uniqueStrings([
+    row.context,
+    row.event_taxon_tissue_context,
+    row.entity_linked_taxon_tissue_context,
+    row.overlap_taxon_tissue_context
+  ].flatMap(splitRelationOutputItems).filter((item) => relationOutputContextKind(item).key === kind));
+}
+
+function relationOutputBestContextItems(row) {
+  const preferred = [row.overlap_taxon_tissue_context, row.context, row.event_taxon_tissue_context, row.entity_linked_taxon_tissue_context];
+  for (const value of preferred) {
+    const items = splitRelationOutputItems(value);
+    if (items.length) return items;
+  }
+  return [];
+}
+
+function relationExtractionGroupedResults(rows) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const key = row.query_name || "Unknown query";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  });
+  return `
+    <div class="relation-query-groups">
+      ${Array.from(groups.entries()).map(([query, groupRows]) => relationExtractionQueryGroup(query, groupRows)).join("")}
+    </div>
+  `;
+}
+
+function relationExtractionQueryGroup(query, rows) {
+  const attributes = uniqueStrings(rows.map((row) => row.attribute_type).filter(Boolean));
+  const species = uniqueStrings(rows.flatMap((row) => relationOutputContextItemsByKind(row, "species")));
+  const tissues = uniqueStrings(rows.flatMap((row) => relationOutputContextItemsByKind(row, "tissue")));
+  return `
+    <section class="relation-query-group">
+      <div class="relation-query-group-head">
+        <div>
+          <strong>${esc(query)}</strong>
+          <span>${fmt(rows.length)} relationship${rows.length === 1 ? "" : "s"}</span>
+        </div>
+        <div>
+          <span>${fmt(attributes.length)} attributes</span>
+          <span>${fmt(species.length)} species</span>
+          <span>${fmt(tissues.length)} tissues/sites</span>
+        </div>
+      </div>
+      ${relationExtractionResultsTable(rows)}
+    </section>
   `;
 }
 
@@ -4989,7 +5066,6 @@ function relationExtractionResultsTable(rows) {
     <div class="clean-table-wrap">
       <table class="clean-relation-output-table">
         <colgroup>
-          <col class="col-query">
           <col class="col-relation">
           <col class="col-attribute">
           <col class="col-context-summary">
@@ -4997,7 +5073,6 @@ function relationExtractionResultsTable(rows) {
         </colgroup>
         <thead>
           <tr>
-            <th>Query</th>
             <th>Relation</th>
             <th>Attribute</th>
             <th>Context sources</th>
@@ -5015,7 +5090,6 @@ function relationExtractionResultsTable(rows) {
 function relationExtractionResultRow(row) {
   return `
     <tr>
-      <td><strong class="relation-table-query">${esc(row.query_name || "-")}</strong></td>
       <td>${relationExtractionRelationButton(row)}</td>
       <td><span class="attribute-type-pill">${esc(row.attribute_type || "-")}</span></td>
       <td>${relationOutputContextSummary(row)}</td>
@@ -5224,6 +5298,7 @@ async function runRelationExtraction() {
 
     const rows = relationRowsForQueryEntities(queryEntities);
     state.relationExtractionResults = rows;
+    resetRelationOutputFilters();
     const submittedCount = compoundEntities.length + parseFastaRecords(state.relationFastaInput).length;
     state.relationExtractionStatus = rows.length
       ? `${fmt(rows.length)} relationship rows extracted from ${fmt(queryEntities.length)} matched PSFD entities.`
@@ -5429,6 +5504,7 @@ async function setRelationExtractionExample(kind) {
   }
   state.relationExtractionResults = [];
   state.relationSequenceMatches = [];
+  resetRelationOutputFilters();
   state.relationExtractionStatus = kind === "fasta" || kind === "exact-fasta"
     ? "Loaded an exact OsMYB55 FASTA record from the PSFD-linked sequence database."
     : kind === "homolog-fasta"
