@@ -25,7 +25,19 @@ from urllib.parse import quote
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOT = Path(os.environ.get("PSFD_SOURCE_ROOT", "/local/storage/alen/projects/1_PSFD")).expanduser()
+DEFAULT_SOURCE_ROOT_CANDIDATES = (
+    REPO_ROOT.parent / "1_PSFD",
+)
+
+
+def initial_source_root() -> Path:
+    configured = os.environ.get("PSFD_SOURCE_ROOT")
+    if configured:
+        return Path(configured).expanduser()
+    return DEFAULT_SOURCE_ROOT_CANDIDATES[0]
+
+
+SOURCE_ROOT = initial_source_root()
 
 HYPERGRAPH_DIR = SOURCE_ROOT / "output" / "7_relations_grouping" / "720_hypergraph"
 SENTENCE_DIR = SOURCE_ROOT / "output" / "1_retrieval" / "111_bioc_sentences_spacy"
@@ -42,6 +54,37 @@ def default_resource_path(env_name: str, portable_path: Path) -> Path:
     if configured:
         return Path(configured).expanduser()
     return portable_path
+
+
+def resolve_source_root(configured: Path | None) -> Path:
+    if configured is not None:
+        return configured.expanduser().resolve()
+
+    env_source_root = os.environ.get("PSFD_SOURCE_ROOT")
+    if env_source_root:
+        return Path(env_source_root).expanduser().resolve()
+
+    for candidate in DEFAULT_SOURCE_ROOT_CANDIDATES:
+        if (candidate / "output").exists():
+            return candidate.resolve()
+
+    candidates = ", ".join(str(path) for path in DEFAULT_SOURCE_ROOT_CANDIDATES)
+    raise SystemExit(
+        "PSFD source root is not configured. Pass --source-root /path/to/1_PSFD, "
+        "set PSFD_SOURCE_ROOT, or clone this repository next to the PSFD checkout. "
+        f"Checked: {candidates}"
+    )
+
+
+def ensure_source_root(source_root: Path) -> None:
+    required = [
+        source_root / "output",
+        source_root / "data",
+    ]
+    missing = [path for path in required if not path.exists()]
+    if missing:
+        missing_text = "\n  - ".join(str(path) for path in missing)
+        raise SystemExit(f"PSFD source root is missing required paths:\n  - {missing_text}")
 
 
 PHYTOZOME_FASTA_DIR = default_resource_path(
@@ -1868,8 +1911,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source-root",
         type=Path,
-        default=SOURCE_ROOT,
-        help="PSFD project root containing output/ and data/ directories.",
+        default=None,
+        help=(
+            "PSFD project root containing output/ and data/. Defaults to "
+            "PSFD_SOURCE_ROOT, then a sibling ../1_PSFD checkout when present."
+        ),
     )
     parser.add_argument(
         "--outdir",
@@ -1887,7 +1933,8 @@ def main() -> None:
     global COMPOUND_CLASSIFICATION_DIR, GENE_PROTEIN_NORMALIZATION_DIR
     global CONTEXT_PROPAGATION_DIR, PORTABLE_PHYTOZOME_FASTA_DIR, PHYTOZOME_FASTA_DIR
 
-    SOURCE_ROOT = args.source_root.expanduser().resolve()
+    SOURCE_ROOT = resolve_source_root(args.source_root)
+    ensure_source_root(SOURCE_ROOT)
     HYPERGRAPH_DIR = SOURCE_ROOT / "output" / "7_relations_grouping" / "720_hypergraph"
     SENTENCE_DIR = SOURCE_ROOT / "output" / "1_retrieval" / "111_bioc_sentences_spacy"
     TRIPLES_EVALUATION_DIR = SOURCE_ROOT / "output" / "4_triples_evaluation" / "410_LLM_triples_evaluation"

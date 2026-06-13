@@ -40,14 +40,26 @@ default and are mainly useful for audits or model-training negatives.
 
 ## Updating Data
 
-The static data files are in `data/`. Rebuild them directly from the PSFD
-pipeline outputs in `/local/storage/alen/projects/1_PSFD/output/...`:
+The static data files are committed in `data/`, so the demo works immediately
+after cloning. To refresh them, point the builder at a local checkout of the
+main PSFD pipeline that contains `output/` and `data/`.
 
 ```bash
-cd /local/storage/alen/projects/psfd-sequence-annotation-demo
-python scripts/build_demo_data.py --source-root /local/storage/alen/projects/1_PSFD
+git clone https://github.com/alenzimic/psfd-sequence-annotation-demo.git
+cd psfd-sequence-annotation-demo
+
+# Option 1: configure once for the shell.
+export PSFD_SOURCE_ROOT=/path/to/1_PSFD
+python scripts/build_demo_data.py
+
+# Option 2: pass the source root per run.
+python scripts/build_demo_data.py --source-root /path/to/1_PSFD
+
 python scripts/build_sequence_index.py
 ```
+
+If this repository is cloned next to the PSFD pipeline checkout, the builder
+also auto-detects a sibling `../1_PSFD` directory.
 
 `build_demo_data.py` rewrites `data/manifest.json`, `data/global_path_index.json`,
 and `data/papers/*.json`. `build_sequence_index.py` rebuilds the browser-side
