@@ -5072,6 +5072,20 @@ body[data-tab="discover"] .main-panel {
   line-height: 1.35;
 }
 
+.annotation-status.loading {
+  background: linear-gradient(90deg, #f6faf8 0%, #e1ebe6 50%, #f6faf8 100%);
+  background-size: 200% 100%;
+  animation: status-shimmer-pulse 1.5s infinite linear;
+  border-color: #b7cac3;
+  color: #17382f;
+  font-weight: 700;
+}
+
+@keyframes status-shimmer-pulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .relation-extraction-panel {
   display: grid;
   gap: 14px;

@@ -1,0 +1,112 @@
+PSFD Database & Query Migration Instructions
+===========================================
+
+This document outlines the architecture for migrating the database indexing, matching, 
+and relationship extraction logic from the UI frontend to the FastAPI backend. 
+
+--------------------------------------------------------------------------------
+PART 1: Architectural Design
+--------------------------------------------------------------------------------
+
+1. Move Database Files:
+   FastAPI should have direct file access to the two JSON data files:
+   - `data/global_path_index.json` (approx. 22 MB)
+   - `data/sequence_index.json` (approx. 143 KB)
+
+2. Indexing in Memory (FastAPI Startup):
+   On application startup, load `global_path_index.json` into memory and build 
+   the lookup indexes in Python.
+
+3. Expose API Endpoints:
+   - GET `/api/stats`: Returns dynamic counts of loaded entities, concepts, and relations.
+   - POST `/api/extract`: Accepts query terms (compounds/FASTA), filters, and returns 
+     the formatted relationship rows directly.
+
+--------------------------------------------------------------------------------
+PART 2: Resolving Sequence Matches to Entities
+--------------------------------------------------------------------------------
+
+When sequence matching engines (MMseqs2 and ESM-C) return results, they must be mapped 
+back to entity records in the loaded database.
+
+Recommended Approach: Global Hash Suffix Mapping (`global_node_id`)
+-----------------------------------------------------------------
+The search engine returns `global_node_id` in the format `global.entity.<Hash>`.
+In the database, entity IDs are paper-specific of the form `<PMCID>.entity.<Hash>`. 
+The FastAPI server extracts the hash suffix from `global.entity.<Hash>` and maps 
+it to all entity records sharing that suffix.
+
+Why this is the best method for PSFD:
+1. Lockstep Generation: The sequence databases (MMseqs2/ESM-C) and the graph database 
+   (`global_path_index.json`) are generated together from the same pipeline run. Because 
+   they are treated as a unified snapshot, the internal hash ID is the most exact and 
+   direct primary key connecting the two systems.
+2. Complete Coverage: Some novel proteins, ORFs, or unannotated sequences might lack a 
+   standardized UniProt Accession but still exist in the graph. Using the pipeline's 
+   internal `global_node_id` ensures every single node can be queried, without relying 
+   on external ontology availability.
+3. Frozen Architecture: Because the PSFD requires significant compute to run, the database 
+   is effectively a static snapshot. The concern of hash IDs changing across pipeline 
+   rebuilds is irrelevant since any rebuild would regenerate the sequence databases anyway.
+
+--------------------------------------------------------------------------------
+PART 3: Python Starter Implementation Code
+--------------------------------------------------------------------------------
+
+Here is a Python boilerplate class to index the data on startup:
+
+```python
+import json
+import re
+from collections import defaultdict
+
+class PSFDDatabase:
+    def __init__(self):
+        self.entities = []
+        self.relations = []
+        
+        # Primary lookup maps
+        self.entity_by_id = {}
+        self.relations_by_entity = defaultdict(list)
+        
+        # Suffix mapping index for Sequence Matching
+        self.entities_by_hash = defaultdict(list)
+        
+    def load_database(self, filepath: str):
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+        self.entities = data.get("entities", [])
+        self.relations = data.get("relations", [])
+        
+        for ent in self.entities:
+            ent_id = ent.get("id")
+            if not ent_id:
+                continue
+            self.entity_by_id[ent_id] = ent
+            
+            # Index Hash Suffix
+            hash_suffix = ent_id.split(".")[-1]
+            self.entities_by_hash[hash_suffix].append(ent)
+            
+        # Index relations
+        for rel in self.relations:
+            subject_ids = self._get_global_endpoint_ids(rel, "subject")
+            object_ids = self._get_global_endpoint_ids(rel, "object")
+            context_ids = rel.get("context_entity_ids", [])
+            
+            all_associated_ids = set(subject_ids + object_ids + context_ids)
+            for eid in all_associated_ids:
+                if eid:
+                    self.relations_by_entity[eid].append(rel)
+
+    def _get_global_endpoint_ids(self, rel: dict, role: str) -> list:
+        single = rel.get(f"{role}_entity_id")
+        plural = rel.get(f"{role}_entity_ids", [])
+        ids = []
+        if single:
+            ids.append(single)
+        if isinstance(plural, list):
+            ids.extend(plural)
+        return list(set(ids))
+```

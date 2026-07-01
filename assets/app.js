@@ -805,6 +805,8 @@ function normalizeGlobalRelations(payload) {
     relations,
     stats: {
       ...(payload.stats || {}),
+      entities: asArray(payload.entities).length,
+      concepts: asArray(payload.concepts).length,
       raw_relations: asArray(payload.relations).length,
       relations: relations.length,
       merged_duplicate_relations: Math.max(0, asArray(payload.relations).length - relations.length)
@@ -2453,9 +2455,9 @@ function eventEvidenceProofCard(event, role) {
       </div>
       <strong>${esc(event.event_label || event.event_id)}</strong>
       ${sentenceIds.length ? sentenceIds.map((id) => {
-        const sentence = state.indexes.sentenceById.get(id);
-        return `<p>${sentence?.text ? esc(sentence.text) : esc(id)}</p>`;
-      }).join("") : `<p class="muted">No evidence sentence IDs.</p>`}
+    const sentence = state.indexes.sentenceById.get(id);
+    return `<p>${sentence?.text ? esc(sentence.text) : esc(id)}</p>`;
+  }).join("") : `<p class="muted">No evidence sentence IDs.</p>`}
     </article>
   `;
 }
@@ -3225,9 +3227,9 @@ function contextChips(rel) {
     <div class="list-meta">
       <span class="badge">context</span>
       ${entities.map((entity) => {
-        const mergeCount = Number(entity.context_merge_count || 0);
-        return `<button class="mini-button" type="button" data-action="open-entity" data-id="${esc(entity.node_id)}" title="${esc(entityOntologyIds(entity).join(", "))}">${esc(entityName(entity))}${mergeCount > 1 ? ` +${fmt(mergeCount - 1)}` : ""}</button>`;
-      }).join("")}
+    const mergeCount = Number(entity.context_merge_count || 0);
+    return `<button class="mini-button" type="button" data-action="open-entity" data-id="${esc(entity.node_id)}" title="${esc(entityOntologyIds(entity).join(", "))}">${esc(entityName(entity))}${mergeCount > 1 ? ` +${fmt(mergeCount - 1)}` : ""}</button>`;
+  }).join("")}
     </div>
   `;
 }
@@ -3313,9 +3315,9 @@ function supportingRelationPairs(dep) {
   return `
     <div class="compact-list">
       ${pairs.slice(0, 20).map((pair) => {
-        const ids = pair.split("->").map((id) => id.trim()).filter(Boolean);
-        const rels = ids.map((id) => state.indexes.relationById.get(id)).filter(Boolean);
-        return `
+    const ids = pair.split("->").map((id) => id.trim()).filter(Boolean);
+    const rels = ids.map((id) => state.indexes.relationById.get(id)).filter(Boolean);
+    return `
           <div class="compact-card supporting-relation-pair">
             <strong>${esc(pair)}</strong>
             ${rels.length ? `
@@ -3329,7 +3331,7 @@ function supportingRelationPairs(dep) {
             `}
           </div>
         `;
-      }).join("")}
+  }).join("")}
     </div>
   `;
 }
@@ -3520,16 +3522,16 @@ function dependencyButtons(deps, eventId) {
   return `
     <div class="compact-list">
       ${deps.slice(0, 40).map((dep) => {
-        const otherId = dep.upstream_event_id === eventId ? dep.downstream_event_id : dep.upstream_event_id;
-        const other = state.indexes.eventById.get(otherId);
-        return `
+    const otherId = dep.upstream_event_id === eventId ? dep.downstream_event_id : dep.upstream_event_id;
+    const other = state.indexes.eventById.get(otherId);
+    return `
           <div class="compact-card">
             <strong>${esc(clean(dep.dependency_type))}</strong> ${badges([tierLabel(dep.tier)], tierClass(dep.tier))}
             <div class="muted">${esc(other?.event_label || otherId)}</div>
             <button class="mini-button" type="button" data-action="select-dependency" data-id="${esc(dep.dependency_id)}">Open dependency</button>
           </div>
         `;
-      }).join("")}
+  }).join("")}
     </div>
   `;
 }
@@ -3733,10 +3735,10 @@ function renderEntityMain(entity) {
           <p>${esc(clean(entity.entity_type))}${ontologyLabel(entity) ? ` | ${esc(ontologyLabel(entity))}` : ""}</p>
         </div>
         ${actionMenu([
-          { label: "Entity details", action: "open-entity", id: entity.node_id },
-          { label: "Route start", action: "path-start", id: entity.node_id },
-          { label: "Route end", action: "path-end", id: entity.node_id }
-        ])}
+    { label: "Entity details", action: "open-entity", id: entity.node_id },
+    { label: "Route start", action: "path-start", id: entity.node_id },
+    { label: "Route end", action: "path-end", id: entity.node_id }
+  ])}
       </div>
       ${entitySummary(entity)}
     </section>
@@ -4113,35 +4115,35 @@ function compoundClassifierMetadata(entity) {
       </summary>
       <div class="metadata-groups">
         ${metadataGroup("ChEBI / PubChem", [
-          ["compound_status", compound.compound_status],
-          ["classification_status", compound.classification_status],
-          ["chebi_id", chebi.id],
-          ["chebi_name", chebi.name],
-          ["chebi_formula", chebi.formula],
-          ["chebi_inchikey", chebi.inchikey],
-          ["pubchem_cid", pubchem.cid],
-          ["pubchem_link_type", pubchem.link_type],
-          ["structure_source", structure.source],
-          ["structure_inchikey", structure.inchikey],
-          ["structure_smiles", structure.smiles]
-        ])}
+    ["compound_status", compound.compound_status],
+    ["classification_status", compound.classification_status],
+    ["chebi_id", chebi.id],
+    ["chebi_name", chebi.name],
+    ["chebi_formula", chebi.formula],
+    ["chebi_inchikey", chebi.inchikey],
+    ["pubchem_cid", pubchem.cid],
+    ["pubchem_link_type", pubchem.link_type],
+    ["structure_source", structure.source],
+    ["structure_inchikey", structure.inchikey],
+    ["structure_smiles", structure.smiles]
+  ])}
         ${metadataGroup("ClassyFire", [
-          ["classyfire_cache_hit", yesNo(cf.cache_hit)],
-          ["classyfire_kingdom", cf.kingdom],
-          ["classyfire_superclass", cf.superclass],
-          ["classyfire_class", cf.class],
-          ["classyfire_subclass", cf.subclass],
-          ["classyfire_direct_parent", cf.direct_parent]
-        ])}
+    ["classyfire_cache_hit", yesNo(cf.cache_hit)],
+    ["classyfire_kingdom", cf.kingdom],
+    ["classyfire_superclass", cf.superclass],
+    ["classyfire_class", cf.class],
+    ["classyfire_subclass", cf.subclass],
+    ["classyfire_direct_parent", cf.direct_parent]
+  ])}
         ${metadataGroup("NPClassifier", [
-          ["npclassifier_applicable", yesNo(np.applicable)],
-          ["npclassifier_cache_hit", yesNo(np.cache_hit)],
-          ["np_pathway", np.pathway],
-          ["np_superclass", np.superclass],
-          ["np_class", np.class],
-          ["np_is_glycoside", yesNo(np.is_glycoside)],
-          ["npclassifier_error", np.error]
-        ])}
+    ["npclassifier_applicable", yesNo(np.applicable)],
+    ["npclassifier_cache_hit", yesNo(np.cache_hit)],
+    ["np_pathway", np.pathway],
+    ["np_superclass", np.superclass],
+    ["np_class", np.class],
+    ["np_is_glycoside", yesNo(np.is_glycoside)],
+    ["npclassifier_error", np.error]
+  ])}
       </div>
       ${compoundRawMetadataTable(compound)}
     </details>
@@ -4441,71 +4443,71 @@ function geneProteinProfile(entity) {
       </summary>
       <div class="metadata-groups">
         ${metadataGroup("Selected UniProt", [
-          ["selected_uniprot_accession", selected.uniprot_accession],
-          ["selected_uniprot_entry", selected.uniprot_entry],
-          ["selected_gene_name", selected.gene_name],
-          ["selected_protein_name", selected.protein_name],
-          ["selected_organism", selected.organism],
-          ["selected_taxon_id", selected.taxon_id],
-          ["selected_taxon_rank", selected.taxon_rank],
-          ["reviewed_status", selected.reviewed_status],
-          ["source_database", selected.source_database]
-        ])}
+    ["selected_uniprot_accession", selected.uniprot_accession],
+    ["selected_uniprot_entry", selected.uniprot_entry],
+    ["selected_gene_name", selected.gene_name],
+    ["selected_protein_name", selected.protein_name],
+    ["selected_organism", selected.organism],
+    ["selected_taxon_id", selected.taxon_id],
+    ["selected_taxon_rank", selected.taxon_rank],
+    ["reviewed_status", selected.reviewed_status],
+    ["source_database", selected.source_database]
+  ])}
         ${phytozome.gene_id ? metadataGroup("Selected Phytozome", [
-          ["phytozome_code", phytozome.code],
-          ["phytozome_gene_id", phytozome.gene_id],
-          ["phytozome_ontology_id", phytozome.ontology_id],
-          ["phytozome_base_gene_id", phytozome.base_gene_id],
-          ["phytozome_base_ontology_id", phytozome.base_ontology_id],
-          ["phytozome_browser_name", phytozome.browser_name],
-          ["phytozome_proteome_id", phytozome.proteome_id],
-          ["report_type", phytozome.report_type],
-          ["sequence_length", phytozome.sequence_length],
-          ["sequence_available", yesNo(phytozome.sequence_available)],
-          ["matched_fasta_id", phytozome.fasta_id],
-          ["phytozome_search_url", phytozome.search_url],
-          ["gene_report_url", phytozome.gene_report_url],
-          ["source_file", phytozome.source_file],
-          ["source_database", phytozome.source_database]
-        ]) : ""}
+    ["phytozome_code", phytozome.code],
+    ["phytozome_gene_id", phytozome.gene_id],
+    ["phytozome_ontology_id", phytozome.ontology_id],
+    ["phytozome_base_gene_id", phytozome.base_gene_id],
+    ["phytozome_base_ontology_id", phytozome.base_ontology_id],
+    ["phytozome_browser_name", phytozome.browser_name],
+    ["phytozome_proteome_id", phytozome.proteome_id],
+    ["report_type", phytozome.report_type],
+    ["sequence_length", phytozome.sequence_length],
+    ["sequence_available", yesNo(phytozome.sequence_available)],
+    ["matched_fasta_id", phytozome.fasta_id],
+    ["phytozome_search_url", phytozome.search_url],
+    ["gene_report_url", phytozome.gene_report_url],
+    ["source_file", phytozome.source_file],
+    ["source_database", phytozome.source_database]
+  ]) : ""}
         ${family.ontology_id ? metadataGroup("Selected Family/Domain", [
-          ["family_ontology_id", family.ontology_id],
-          ["family_id", family.id],
-          ["family_database", family.database],
-          ["family_type", family.type],
-          ["family_name", family.name],
-          ["family_alias", family.alias],
-          ["family_alias_type", family.alias_type],
-          ["linked_interpro_id", family.linked_interpro_ontology_id],
-          ["linked_pfam_ids", asArray(family.linked_pfam_ontology_ids).join(", ")],
-          ["resource_url", family.resource_url],
-          ["source_database", family.source_database]
-        ]) : ""}
+    ["family_ontology_id", family.ontology_id],
+    ["family_id", family.id],
+    ["family_database", family.database],
+    ["family_type", family.type],
+    ["family_name", family.name],
+    ["family_alias", family.alias],
+    ["family_alias_type", family.alias_type],
+    ["linked_interpro_id", family.linked_interpro_ontology_id],
+    ["linked_pfam_ids", asArray(family.linked_pfam_ontology_ids).join(", ")],
+    ["resource_url", family.resource_url],
+    ["source_database", family.source_database]
+  ]) : ""}
         ${databaseIdCount ? metadataGroup("Additional Gene Identifiers", asArray(profile.database_ids).slice(0, 18).map((item) => [
-          item.ontology_id || item.identifier,
-          [item.database, item.source_field, item.resource_url].filter(Boolean).join(" | ")
-        ])) : ""}
+    item.ontology_id || item.identifier,
+    [item.database, item.source_field, item.resource_url].filter(Boolean).join(" | ")
+  ])) : ""}
         ${metadataGroup("Representative UniProt", [
-          ["representative_uniprot_accession", representative.uniprot_accession],
-          ["representative_uniprot_entry", representative.uniprot_entry],
-          ["representative_organism", representative.organism],
-          ["representative_source_database", representative.source_database],
-          ["representative_reviewed_status", representative.reviewed_status],
-          ["representative_basis", representative.basis]
-        ])}
+    ["representative_uniprot_accession", representative.uniprot_accession],
+    ["representative_uniprot_entry", representative.uniprot_entry],
+    ["representative_organism", representative.organism],
+    ["representative_source_database", representative.source_database],
+    ["representative_reviewed_status", representative.reviewed_status],
+    ["representative_basis", representative.basis]
+  ])}
         ${metadataGroup("Normalization", [
-          ["decision", best.decision],
-          ["status", best.status],
-          ["normalization_scope", best.normalization_scope],
-          ["gene_query", best.gene_query],
-          ["gene_query_type", best.gene_query_type],
-          ["lookup_query", best.lookup_query],
-          ["lookup_strategy", best.lookup_strategy],
-          ["match_type", best.match_type],
-          ["candidate_count", best.candidate_count],
-          ["ambiguity_reason", best.ambiguity_reason],
-          ["notes", best.notes]
-        ])}
+    ["decision", best.decision],
+    ["status", best.status],
+    ["normalization_scope", best.normalization_scope],
+    ["gene_query", best.gene_query],
+    ["gene_query_type", best.gene_query_type],
+    ["lookup_query", best.lookup_query],
+    ["lookup_strategy", best.lookup_strategy],
+    ["match_type", best.match_type],
+    ["candidate_count", best.candidate_count],
+    ["ambiguity_reason", best.ambiguity_reason],
+    ["notes", best.notes]
+  ])}
       </div>
       ${geneProteinRowsTable(profile)}
     </details>
@@ -4818,7 +4820,7 @@ function renderDiscoverWorkbench() {
           <button class="mini-button primary-action" type="button" data-relation-extract-action="extract">Extract relationships</button>
           <button class="mini-button" type="button" data-relation-extract-action="download" ${state.relationExtractionResults.length ? "" : "disabled"}>Download tab-delimited file</button>
         </div>
-        <div class="annotation-status">${esc(state.relationExtractionStatus || "Submit compound names or protein FASTA sequences to extract PSFD relationships.")}</div>
+        <div class="annotation-status ${(state.relationExtractionStatus || "").includes("...") ? "loading" : ""}">${esc(state.relationExtractionStatus || "Submit compound names or protein FASTA sequences to extract PSFD relationships.")}</div>
         ${renderRelationExtractionResults()}
       </section>
     </section>
@@ -5112,8 +5114,8 @@ function relationOutputContextCell(value, emptyText) {
   return `
     <div class="relation-table-context ${items.length ? "" : "empty"}">
       ${items.length
-        ? items.map(relationOutputChip).join("")
-        : `<small>${esc(emptyText)}</small>`}
+      ? items.map(relationOutputChip).join("")
+      : `<small>${esc(emptyText)}</small>`}
     </div>
   `;
 }
@@ -5277,6 +5279,7 @@ function sequenceMatchCard(match) {
 }
 
 async function runRelationExtraction() {
+  console.log("Initiating relationship extraction process...");
   try {
     const compoundInput = document.getElementById("relationCompoundInput");
     const fastaInput = document.getElementById("relationFastaInput");
@@ -5285,11 +5288,25 @@ async function runRelationExtraction() {
     document.querySelectorAll("[data-relation-attribute]").forEach((input) => {
       state.relationAttributeFilters[input.getAttribute("data-relation-attribute")] = input.checked;
     });
+
+    state.relationExtractionStatus = "Loading relationship data indices...";
+    render();
+
     await loadGlobalPathIndex();
     await loadSequenceIndex();
 
     const compoundEntities = relationCompoundEntities();
-    const fastaMatches = relationFastaMatches();
+    
+    const hasFasta = parseFastaRecords(state.relationFastaInput).length > 0;
+    if (hasFasta) {
+      state.relationExtractionStatus = "Querying FastAPI server for sequence matches...";
+      render();
+    } else {
+      state.relationExtractionStatus = "Extracting relationships from index...";
+      render();
+    }
+
+    const fastaMatches = await relationFastaMatches();
     state.relationSequenceMatches = fastaMatches;
     const queryEntities = [
       ...compoundEntities.map((item) => ({ queryName: item.term, entity: item.entity, source: "compound" })),
@@ -5306,10 +5323,26 @@ async function runRelationExtraction() {
         ? "No endpoint relationships matched the selected attribute filters."
         : "Enter at least one compound name or protein FASTA sequence.";
     render();
+
+    console.log(`SUCCESS: Relationship extraction completed. Extracted ${rows.length} rows.`);
+    console.groupCollapsed("[LOG] Detailed relationship extraction query results");
+    console.log("Matched query entities:", queryEntities);
+    console.log("Extracted relation rows:", rows);
+    console.groupEnd();
+
+    return {
+      success: true,
+      queryEntities: queryEntities,
+      extractedRows: rows
+    };
   } catch (error) {
     console.error(error);
     state.relationExtractionStatus = `Relationship extraction failed: ${error.message}`;
     render();
+    return {
+      success: false,
+      error: error.message
+    };
   }
 }
 
@@ -5323,10 +5356,67 @@ function relationCompoundEntities() {
     .filter((item) => item.entity);
 }
 
-function relationFastaMatches() {
+async function relationFastaMatches() {
   const queries = parseFastaRecords(state.relationFastaInput);
-  if (!queries.length || !state.sequenceIndex?.records?.length) return [];
-  return queries.flatMap((query) => topSequenceMatches(query, 3));
+  if (!queries.length) return [];
+
+  const matches = [];
+
+  for (const query of queries) {
+    try {
+      // POST the query sequence to the FastAPI server running on BIOHPC (Port 8899)
+      const response = await fetch('http://localhost:8899/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sequence: query.sequence,
+          method: "embed2graph" // Use ESM-2 embedding search
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server returned status: ${response.status}`);
+      }
+
+      const results = await response.json(); // Array of target matches
+      
+      console.log(`SUCCESS: FastAPI search returned ${results.length} results.`);
+      console.groupCollapsed("[LOG] Detailed FastAPI search results");
+      console.log("Raw results:", results);
+      console.groupEnd();
+
+      // Map resolved nodes back to the UI globalPathIndexes entity lookup
+      for (const item of results) {
+        if (!item.global_node_id) continue;
+
+        const entities = state.globalPathIndexes?.entitiesByGlobalId?.get(item.global_node_id) || [];
+        for (const entity of entities) {
+          matches.push({
+            query_name: query.name,
+            entity,
+            entity_label: pathEntityName(entity),
+            pmcid: entity.pmcid || "",
+            accession: item.uniprot_id,
+            kmer_score: item.score || 1.0, // Scale similarity score
+            query_coverage: 1.0,
+            target_coverage: 1.0,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("Vector search failed, falling back to local k-mer matching:", err);
+      const localMatches = topSequenceMatches(query);
+      
+      console.log(`SUCCESS: Local k-mer matching returned ${localMatches.length} results.`);
+      console.groupCollapsed("[LOG] Detailed local k-mer matching results");
+      console.log("Local matches:", localMatches);
+      console.groupEnd();
+      
+      matches.push(...localMatches);
+    }
+  }
+
+  return matches;
 }
 
 function parseFastaRecords(text) {
@@ -5509,7 +5599,7 @@ async function setRelationExtractionExample(kind) {
     ? "Loaded an exact OsMYB55 FASTA record from the PSFD-linked sequence database."
     : kind === "homolog-fasta"
       ? "Loaded a non-identical HSP70-like FASTA query derived from a PSFD-linked sequence to demonstrate homolog matching."
-    : "Example loaded. Click Extract relationships to retrieve endpoint triples from the PSFD data.";
+      : "Example loaded. Click Extract relationships to retrieve endpoint triples from the PSFD data.";
   render();
 }
 
@@ -5791,15 +5881,15 @@ function annotationMeaningChooser(row) {
       </div>
       <div class="annotation-meaning-grid">
         ${choices.map((choice) => {
-          const active = choice.entity.id === row.selectedId;
-          return `
+    const active = choice.entity.id === row.selectedId;
+    return `
             <button class="annotation-meaning-choice ${active ? "active" : ""}" type="button" data-annotation-select-match="${esc(choice.entity.id)}" data-term="${esc(row.term)}" style="--entity-color:${esc(colorForEntity(choice.entity.type || choice.entity.entity_type))}">
               <strong>${esc(choice.category)}</strong>
               <span>${esc(choice.label)}</span>
               <small>${esc(choice.detail)}</small>
             </button>
           `;
-        }).join("")}
+  }).join("")}
       </div>
     </section>
   `;
@@ -6084,8 +6174,8 @@ function annotationOntologySummary(entity, ids, concept = null) {
   const fallback = conciseEntityDefinition(entity);
   const description = conceptDescription
     || (selectedDescription && !looksLikeEvidenceSentence(selectedDescription)
-    ? selectedDescription
-    : fallback);
+      ? selectedDescription
+      : fallback);
   return {
     id,
     title: title || id || entity.ontology,
@@ -7147,17 +7237,17 @@ function computeAnnotationEnrichment() {
     mechanisms
       .filter((mechanism) => mechanism.kind === "Trait or phenotype" || mechanism.kind === "Regulation" || mechanism.kind === "Metabolism")
       .forEach((mechanism) => {
-      upsertAnnotationSignal(rows, {
-        category: "Biology in list",
-        label: mechanism.statement,
-        count: 1,
-        unit: "relations",
-        detail: mechanism.contextSummary || mechanism.kind,
-        entity,
-        target: { id: mechanism.id, pmcid: mechanism.pmcid, label: mechanism.statement },
-        targetKind: "relation",
+        upsertAnnotationSignal(rows, {
+          category: "Biology in list",
+          label: mechanism.statement,
+          count: 1,
+          unit: "relations",
+          detail: mechanism.contextSummary || mechanism.kind,
+          entity,
+          target: { id: mechanism.id, pmcid: mechanism.pmcid, label: mechanism.statement },
+          targetKind: "relation",
+        });
       });
-    });
     contexts.forEach((context) => {
       upsertAnnotationSignal(rows, {
         category: "Shared contexts",
@@ -7803,11 +7893,22 @@ function buildGlobalPathIndexes(payload) {
   const relationsByEntity = new Map();
   const eventsByEntity = new Map();
   const relationById = new Map();
+  const entitiesByHash = new Map();
+  const entitiesByGlobalId = new Map();
   function push(map, key, value) {
     if (!key) return;
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(value);
   }
+  payload.entities.forEach((entity) => {
+    if (entity.id) {
+      const hash = entity.id.split(".").pop();
+      push(entitiesByHash, hash, entity);
+      
+      const globalId = `global.entity.${hash}`;
+      push(entitiesByGlobalId, globalId, entity);
+    }
+  });
   payload.relations.forEach((relation) => {
     [relation.id, ...asArray(relation.merged_relation_ids)].forEach((id) => {
       if (id) relationById.set(id, relation);
@@ -7826,7 +7927,9 @@ function buildGlobalPathIndexes(payload) {
     relationById,
     dependencyById: new Map(payload.dependencies.map((item) => [item.id, item])),
     relationsByEntity,
-    eventsByEntity
+    eventsByEntity,
+    entitiesByHash,
+    entitiesByGlobalId
   };
 }
 
@@ -8101,10 +8204,10 @@ function renderPathNarrative(path) {
   return `
     <div class="path-narrative">
       ${path.edges.map((edge, index) => {
-        const from = pathNodeInfo(path.nodes[index]);
-        const to = pathNodeInfo(path.nodes[index + 1]);
-        return edgeDetailCard(edge, from, to, index);
-      }).join("")}
+    const from = pathNodeInfo(path.nodes[index]);
+    const to = pathNodeInfo(path.nodes[index + 1]);
+    return edgeDetailCard(edge, from, to, index);
+  }).join("")}
     </div>
   `;
 }
@@ -8459,10 +8562,10 @@ function openEntityModal(id) {
       <div class="section-header">
         <h2>Actions</h2>
         ${actionMenu([
-          { label: "Open entity page", action: "select-entity", id },
-          { label: "Route start", action: "path-start", id },
-          { label: "Route end", action: "path-end", id }
-        ])}
+    { label: "Open entity page", action: "select-entity", id },
+    { label: "Route start", action: "path-start", id },
+    { label: "Route end", action: "path-end", id }
+  ])}
       </div>
     </div>
     <div class="section-card">
