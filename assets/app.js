@@ -48,6 +48,8 @@ const state = {
   annotationSelectionIds: {},
   relationCompoundInput: "",
   relationFastaInput: "",
+  relationActiveSubTab: "compound",
+  relationSearchMethod: "seq2graph",
   relationAttributeFilters: {
     genes: true,
     metabolites: true,
@@ -379,6 +381,8 @@ function installGlobalHandlers() {
     if (!key) return;
     if (target instanceof HTMLInputElement && target.type === "checkbox") {
       state[key] = target.checked;
+    } else if (target instanceof HTMLInputElement && target.type === "radio") {
+      if (target.checked) state[key] = target.value;
     } else if (target instanceof HTMLSelectElement) {
       state[key] = target.value;
     }
@@ -567,7 +571,7 @@ function closeRelationOutputMoreMenus(clicked) {
 }
 
 function annotationControlSelector() {
-  return "[data-annotation-action], [data-annotation-example], [data-annotation-select-match], [data-annotation-tab], [data-annotation-search], [data-relation-extract-action], [data-sequence-example]";
+  return "[data-annotation-action], [data-annotation-example], [data-annotation-select-match], [data-annotation-tab], [data-annotation-search], [data-relation-extract-action], [data-sequence-example], [data-relation-tab]";
 }
 
 function runAnnotationControlAction(target) {
@@ -593,6 +597,18 @@ function runAnnotationControlAction(target) {
   }
   if (relationAction === "download") {
     window.setTimeout(() => exportRelationExtractionTable(), 0);
+    return true;
+  }
+  const relationTab = target.getAttribute("data-relation-tab");
+  if (relationTab !== null) {
+    const compoundInput = document.getElementById("relationCompoundInput");
+    const fastaInput = document.getElementById("relationFastaInput");
+    if (compoundInput) state.relationCompoundInput = compoundInput.value;
+    if (fastaInput) state.relationFastaInput = fastaInput.value;
+    window.setTimeout(() => {
+      state.relationActiveSubTab = relationTab;
+      render();
+    }, 0);
     return true;
   }
   const sequenceExample = target.getAttribute("data-sequence-example");
@@ -4753,17 +4769,8 @@ function renderDiscoverWorkbench() {
       render();
     });
   }
-  if (!state.sequenceIndex && !state.sequenceIndexLoading) {
-    loadSequenceIndex().then(() => {
-      if (state.tab === "discover") render();
-    }).catch((error) => {
-      state.relationExtractionStatus = `Could not load sequence index: ${error.message}`;
-      render();
-    });
-  }
   const ready = Boolean(state.globalPathIndex);
   const stats = state.globalPathIndex?.stats || {};
-  const sequenceStats = state.sequenceIndex || {};
   els.mainPanel.innerHTML = `
     <section class="annotation-page">
       <div class="hero-title">
@@ -4779,20 +4786,39 @@ function renderDiscoverWorkbench() {
           <span>01</span>
           <div>
             <h3>Compound and FASTA relationship extraction</h3>
-            <small>Endpoint triples from PSFD. FASTA matching runs in the browser against ${fmt(sequenceStats.record_count || 0)} PSFD-linked protein sequences.</small>
+            <small>Endpoint triples from PSFD. FASTA homology search is processed on the FastAPI server.</small>
           </div>
         </div>
-        <div class="dual-query-grid">
-          <label class="query-box compound-query-box">
-            <span>Enter compound names</span>
-            <textarea id="relationCompoundInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="piperonylic acid&#10;GABA&#10;ABA">${esc(state.relationCompoundInput)}</textarea>
-          </label>
-          <div class="or-divider">or</div>
-          <label class="query-box fasta-query-box">
-            <span>Enter protein FASTA sequences</span>
-            <textarea id="relationFastaInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder=">query_protein&#10;MSTNPKPQRKTKRNTNRRPQDVKFPGGGQIVGGV...">${esc(state.relationFastaInput)}</textarea>
-          </label>
+
+        <div class="relation-subtabs-container" role="tablist" aria-label="Query type">
+          <button class="relation-subtab ${state.relationActiveSubTab === "compound" ? "active" : ""}" data-relation-tab="compound" type="button" role="tab" aria-selected="${state.relationActiveSubTab === "compound"}">Compound Lookup</button>
+          <button class="relation-subtab ${state.relationActiveSubTab === "sequence" ? "active" : ""}" data-relation-tab="sequence" type="button" role="tab" aria-selected="${state.relationActiveSubTab === "sequence"}">Sequence Search</button>
         </div>
+
+        <div class="relation-tab-content">
+          ${state.relationActiveSubTab === "compound" ? `
+            <div class="query-box compound-query-box" role="tabpanel">
+              <textarea id="relationCompoundInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="piperonylic acid&#10;GABA&#10;ABA">${esc(state.relationCompoundInput)}</textarea>
+            </div>
+          ` : `
+            <div class="query-box fasta-query-box" role="tabpanel">
+              <textarea id="relationFastaInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder=">query_protein&#10;MSTNPKPQRKTKRNTNRRPQDVKFPGGGQIVGGV...">${esc(state.relationFastaInput)}</textarea>
+              
+              <div class="homology-selector-panel">
+                <span>Homology Method:</span>
+                <label class="radio-label">
+                  <input type="radio" data-state-key="relationSearchMethod" name="relationSearchMethod" value="seq2graph" ${state.relationSearchMethod === "seq2graph" ? "checked" : ""}>
+                  <span>Sequence Alignment (MMSeqs2)</span>
+                </label>
+                <label class="radio-label">
+                  <input type="radio" data-state-key="relationSearchMethod" name="relationSearchMethod" value="embed2graph" ${state.relationSearchMethod === "embed2graph" ? "checked" : ""}>
+                  <span>Deep Learning Embeddings (ESM-C + FAISS)</span>
+                </label>
+              </div>
+            </div>
+          `}
+        </div>
+
         <div class="attribute-filter-panel">
           <div>
             <h4>Choose PCO/PSFD attributes to extract for the submitted entities</h4>
@@ -4837,34 +4863,7 @@ function relationAttributeCheckbox(id, label) {
   `;
 }
 
-async function loadSequenceIndex() {
-  if (state.sequenceIndex) return state.sequenceIndex;
-  if (state.sequenceIndexPromise) return state.sequenceIndexPromise;
-  state.sequenceIndexLoading = true;
-  state.sequenceIndexPromise = fetchJson("data/sequence_index.json")
-    .then((payload) => {
-      payload.records = asArray(payload.records).map(prepareSequenceRecord);
-      state.sequenceIndex = payload;
-      return payload;
-    })
-    .finally(() => {
-      state.sequenceIndexLoading = false;
-      state.sequenceIndexPromise = null;
-    });
-  return state.sequenceIndexPromise;
-}
 
-function prepareSequenceRecord(record) {
-  const sequence = cleanProteinSequence(record.sequence || "");
-  const profile = kmerProfile(sequence, 3);
-  return {
-    ...record,
-    sequence,
-    length: sequence.length,
-    _kmerCounts: profile.counts,
-    _kmerTotal: profile.total,
-  };
-}
 
 function renderRelationExtractionResults() {
   if (!state.relationExtractionResults.length && !state.relationSequenceMatches.length) {
@@ -5293,11 +5292,11 @@ async function runRelationExtraction() {
     render();
 
     await loadGlobalPathIndex();
-    await loadSequenceIndex();
 
-    const compoundEntities = relationCompoundEntities();
+    const isCompoundTab = state.relationActiveSubTab === "compound";
+    const compoundEntities = isCompoundTab ? relationCompoundEntities() : [];
     
-    const hasFasta = parseFastaRecords(state.relationFastaInput).length > 0;
+    const hasFasta = !isCompoundTab && parseFastaRecords(state.relationFastaInput).length > 0;
     if (hasFasta) {
       state.relationExtractionStatus = "Querying FastAPI server for sequence matches...";
       render();
@@ -5306,7 +5305,7 @@ async function runRelationExtraction() {
       render();
     }
 
-    const fastaMatches = await relationFastaMatches();
+    const fastaMatches = hasFasta ? await relationFastaMatches() : [];
     state.relationSequenceMatches = fastaMatches;
     const queryEntities = [
       ...compoundEntities.map((item) => ({ queryName: item.term, entity: item.entity, source: "compound" })),
@@ -5364,13 +5363,13 @@ async function relationFastaMatches() {
 
   for (const query of queries) {
     try {
-      // POST the query sequence to the FastAPI server running on BIOHPC (Port 8899)
+      // POST the query sequence to the FastAPI server running on Port 8899
       const response = await fetch('http://localhost:8899/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sequence: query.sequence,
-          method: "embed2graph" // Use ESM-2 embedding search
+          method: state.relationSearchMethod
         })
       });
 
@@ -5404,15 +5403,8 @@ async function relationFastaMatches() {
         }
       }
     } catch (err) {
-      console.warn("Vector search failed, falling back to local k-mer matching:", err);
-      const localMatches = topSequenceMatches(query);
-      
-      console.log(`SUCCESS: Local k-mer matching returned ${localMatches.length} results.`);
-      console.groupCollapsed("[LOG] Detailed local k-mer matching results");
-      console.log("Local matches:", localMatches);
-      console.groupEnd();
-      
-      matches.push(...localMatches);
+      console.error(`FastAPI search failed for query ${query.name}:`, err);
+      throw err;
     }
   }
 
@@ -5446,56 +5438,7 @@ function cleanProteinSequence(sequence) {
   return String(sequence || "").toUpperCase().replace(/[^A-Z*]/g, "").replaceAll("*", "");
 }
 
-function topSequenceMatches(query, limit = 3) {
-  const queryProfile = kmerProfile(query.sequence, 3);
-  if (!queryProfile.total) return [];
-  return state.sequenceIndex.records
-    .map((record) => {
-      const overlap = kmerOverlap(queryProfile.counts, record._kmerCounts);
-      const queryCoverage = overlap / queryProfile.total;
-      const targetCoverage = record._kmerTotal ? overlap / record._kmerTotal : 0;
-      const kmerScore = (2 * overlap) / Math.max(1, queryProfile.total + (record._kmerTotal || 0));
-      return { record, overlap, queryCoverage, targetCoverage, kmerScore };
-    })
-    .filter((hit) => hit.overlap > 0)
-    .sort((a, b) => b.kmerScore - a.kmerScore || b.queryCoverage - a.queryCoverage)
-    .slice(0, limit)
-    .flatMap((hit) => asArray(hit.record.entities).slice(0, 2).map((entityRef) => {
-      const entity = state.globalPathIndexes?.entityById?.get(entityRef.id);
-      if (!entity) return null;
-      return {
-        query_name: query.name,
-        entity,
-        entity_label: pathEntityName(entity),
-        pmcid: entity.pmcid || entityRef.pmcid || "",
-        accession: hit.record.accession,
-        kmer_score: hit.kmerScore,
-        query_coverage: hit.queryCoverage,
-        target_coverage: hit.targetCoverage,
-      };
-    }).filter(Boolean));
-}
 
-function kmerProfile(sequence, k = 3) {
-  const counts = new Map();
-  const cleanSeq = cleanProteinSequence(sequence);
-  if (cleanSeq.length < k) return { counts, total: 0 };
-  let total = 0;
-  for (let index = 0; index <= cleanSeq.length - k; index += 1) {
-    const kmer = cleanSeq.slice(index, index + k);
-    counts.set(kmer, (counts.get(kmer) || 0) + 1);
-    total += 1;
-  }
-  return { counts, total };
-}
-
-function kmerOverlap(a, b) {
-  let overlap = 0;
-  a.forEach((count, kmer) => {
-    overlap += Math.min(count, b.get(kmer) || 0);
-  });
-  return overlap;
-}
 
 function relationRowsForQueryEntities(queryEntities) {
   const seen = new Set();
@@ -5575,22 +5518,25 @@ function relationAttributeRank(key) {
 }
 
 async function setRelationExtractionExample(kind) {
-  await loadSequenceIndex();
   if (kind === "compound") {
+    state.relationActiveSubTab = "compound";
     state.relationCompoundInput = "piperonylic acid\nGABA\nABA";
     state.relationFastaInput = "";
   } else if (kind === "fasta" || kind === "exact-fasta") {
-    const record = sequenceExampleRecord("exact");
+    state.relationActiveSubTab = "sequence";
     state.relationCompoundInput = "";
-    state.relationFastaInput = record ? `>${sequenceRecordLabel(record)}|${record.accession}|exact_psfd_match\n${wrapSequence(record.sequence)}` : "";
+    const sequence = "MGRAPCCDKASVKRGPWSPEEDEQLRSYVQSHGIGGNWIALPQKAGLNRCGKSCRLRWLNYLRPDIKHGGYTEQEDHIICSLYNSIGSRWSIIASKLPGRTDNDVKNYWNTKLKKKAMGAVQPRAAASAPSQCTSSAMAPALSPASSSVTSSSGDACFAAAATTTTTMYPPPTTPPQQQFIRFDAPPAAAAAASPTDLAPVPPPATVTADGDGGWASDALSLDDVFLGELTAGEPLFPYAELFSGFAGAAPDSKATLELSACYFPNMAEMWAASDHAYAKPQGLCNTLT";
+    state.relationFastaInput = `>OsMYB55|A0A0P0WQQ7|exact_psfd_match\n${wrapSequence(sequence)}`;
   } else if (kind === "homolog-fasta") {
-    const record = sequenceExampleRecord("homolog");
+    state.relationActiveSubTab = "sequence";
     state.relationCompoundInput = "";
-    state.relationFastaInput = record ? `>novel_${sequenceRecordLabel(record)}_like_query|derived_from_${record.accession}|non_exact_demo\n${wrapSequence(homologLikeSequence(record.sequence))}` : "";
+    const sequence = "MGRAPCCDKASVKRGPWSPEEDEQLRSYVQSHGIGGNWIALPQKAGLNRCGKSCRLRWLNYLRPDIKHGGYTEQEDHIICSLYNSIGSRWSIIASKLPGRTDNDVKNYWNTKLKKKAMGAVQPRAAASAPSQCTSSAMAPALSPASSSVTSSSGDACFAAAATTTTTMYPPPTTPPQQQFIRFDAPPAAAAAASPTDLAPVPPPATVTADGDGGWASDALSLDDVFLGELTAGEPLFPYAELFSGFAGAAPDSKATLELSACYFPNMAEMWAASDHAYAKPQGLCNTLT";
+    state.relationFastaInput = `>novel_OsMYB55_like_query|derived_from_A0A0P0WQQ7|non_exact_demo\n${wrapSequence(homologLikeSequence(sequence))}`;
   } else {
-    const record = sequenceExampleRecord("homolog");
+    state.relationActiveSubTab = "compound";
     state.relationCompoundInput = "piperonylic acid\nGABA";
-    state.relationFastaInput = record ? `>novel_${sequenceRecordLabel(record)}_like_query|derived_from_${record.accession}|non_exact_demo\n${wrapSequence(homologLikeSequence(record.sequence))}` : "";
+    const sequence = "MGRAPCCDKASVKRGPWSPEEDEQLRSYVQSHGIGGNWIALPQKAGLNRCGKSCRLRWLNYLRPDIKHGGYTEQEDHIICSLYNSIGSRWSIIASKLPGRTDNDVKNYWNTKLKKKAMGAVQPRAAASAPSQCTSSAMAPALSPASSSVTSSSGDACFAAAATTTTTMYPPPTTPPQQQFIRFDAPPAAAAAASPTDLAPVPPPATVTADGDGGWASDALSLDDVFLGELTAGEPLFPYAELFSGFAGAAPDSKATLELSACYFPNMAEMWAASDHAYAKPQGLCNTLT";
+    state.relationFastaInput = `>novel_OsMYB55_like_query|derived_from_A0A0P0WQQ7|non_exact_demo\n${wrapSequence(homologLikeSequence(sequence))}`;
   }
   state.relationExtractionResults = [];
   state.relationSequenceMatches = [];
@@ -5598,26 +5544,9 @@ async function setRelationExtractionExample(kind) {
   state.relationExtractionStatus = kind === "fasta" || kind === "exact-fasta"
     ? "Loaded an exact OsMYB55 FASTA record from the PSFD-linked sequence database."
     : kind === "homolog-fasta"
-      ? "Loaded a non-identical HSP70-like FASTA query derived from a PSFD-linked sequence to demonstrate homolog matching."
+      ? "Loaded a non-identical OsMYB55-like FASTA query derived from a PSFD-linked sequence to demonstrate homolog matching."
       : "Example loaded. Click Extract relationships to retrieve endpoint triples from the PSFD data.";
   render();
-}
-
-function sequenceExampleRecord(mode = "exact") {
-  const preferences = mode === "homolog"
-    ? [/^hsp70$/i, /plastid hsp70/i, /hsp70/i, /atwrky33/i, /\bwrky\b/i]
-    : [/osmyb55/i, /atwrky33/i, /\bwrky\b/i, /hsp70/i, /\bmyb/i];
-  for (const pattern of preferences) {
-    const match = state.sequenceIndex?.records?.find((record) =>
-      asArray(record.entities).some((entity) => pattern.test(entity.label || ""))
-    );
-    if (match) return match;
-  }
-  return state.sequenceIndex?.records?.[0] || null;
-}
-
-function sequenceRecordLabel(record) {
-  return clean(asArray(record?.entities)[0]?.label || record?.accession || "PSFD_sequence").replace(/\s+/g, "_");
 }
 
 function homologLikeSequence(sequence) {
