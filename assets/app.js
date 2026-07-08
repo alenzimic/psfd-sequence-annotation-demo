@@ -5263,14 +5263,26 @@ function relationOutputContextKind(item) {
 }
 
 function sequenceMatchCard(match) {
+  let scoreLabel = "k-mer score";
+  let scoreValue = `${Math.round(match.kmer_score * 100)}%`;
+  
+  if (match.score_type) {
+    scoreLabel = match.score_type.replace(/_/g, ' ');
+    if (match.score_type === "cosine_similarity") {
+      scoreValue = match.kmer_score.toFixed(4);
+    }
+  } else if (match.search_method === "embed2graph") {
+    scoreLabel = "cosine similarity";
+    scoreValue = match.kmer_score.toFixed(4);
+  }
   return `
     <article class="sequence-match-card">
       <span>${esc(match.query_name)}</span>
       <strong>${esc(match.entity_label)}</strong>
       <small>${esc([match.accession, match.pmcid].filter(Boolean).join(" | "))}</small>
       <div>
-        <b>${Math.round(match.kmer_score * 100)}%</b>
-        <em>k-mer score</em>
+        <b>${scoreValue}</b>
+        <em>${scoreLabel}</em>
       </div>
       <p>${esc(`Query coverage ${Math.round(match.query_coverage * 100)}%, target coverage ${Math.round(match.target_coverage * 100)}%`)}</p>
     </article>
@@ -5397,6 +5409,8 @@ async function relationFastaMatches() {
             pmcid: entity.pmcid || "",
             accession: item.uniprot_id,
             kmer_score: item.score || 1.0, // Scale similarity score
+            score_type: item.score_type,
+            search_method: state.relationSearchMethod,
             query_coverage: 1.0,
             target_coverage: 1.0,
           });
@@ -5443,11 +5457,11 @@ function cleanProteinSequence(sequence) {
 function relationRowsForQueryEntities(queryEntities) {
   const seen = new Set();
   const rows = [];
-  queryEntities.forEach(({ queryName, entity }) => {
+  queryEntities.forEach(({ queryName, entity, match }) => {
     const relations = state.globalPathIndexes?.relationsByEntity?.get(entity.id) || [];
     relations.forEach((rel) => {
       if (!relationHasEndpoint(rel, entity.id)) return;
-      const row = relationExtractionRow(queryName, entity, rel);
+      const row = relationExtractionRow(queryName, entity, rel, match);
       if (!row) return;
       const key = `${row.query_name}|${row.relation_id}|${row.attribute_entity_id}`;
       if (seen.has(key)) return;
@@ -5462,7 +5476,7 @@ function relationRowsForQueryEntities(queryEntities) {
   );
 }
 
-function relationExtractionRow(queryName, queryEntity, rel) {
+function relationExtractionRow(queryName, queryEntity, rel, match) {
   const subject = state.globalPathIndexes?.entityById?.get(rel.subject_entity_id);
   const object = state.globalPathIndexes?.entityById?.get(rel.object_entity_id);
   if (!subject || !object) return null;
@@ -5489,6 +5503,8 @@ function relationExtractionRow(queryName, queryEntity, rel) {
     overlap_taxon_tissue_context: overlapTaxonTissueContext,
     attribute_type: attribute.label,
     normalized_relation: `${normalizedEntityForRelation(subject)} ${predicate} ${normalizedEntityForRelation(object)}`,
+    score: match ? match.kmer_score : null,
+    score_type: match ? match.score_type || (match.search_method === 'embed2graph' ? 'cosine_similarity' : 'k-mer score') : null,
   };
 }
 
@@ -5583,6 +5599,8 @@ function exportRelationExtractionTable() {
     "overlap_taxon_tissue_context",
     "attribute_type",
     "ontology_normalized_relation",
+    "similarity_score",
+    "similarity_score_type"
   ];
   const rows = state.relationExtractionResults.map((row) => [
     row.query_name,
@@ -5593,6 +5611,8 @@ function exportRelationExtractionTable() {
     row.overlap_taxon_tissue_context,
     row.attribute_type,
     row.normalized_relation,
+    row.score != null ? row.score : "",
+    row.score_type || ""
   ]);
   const content = [header, ...rows].map((row) => row.map(tsvCell).join("\t")).join("\n") + "\n";
   downloadFile("psfd_relationship_attributes.tsv", content, "text/tab-separated-values");
