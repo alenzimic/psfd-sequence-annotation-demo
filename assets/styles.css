@@ -5234,9 +5234,10 @@ body[data-tab="discover"] .main-panel {
 }
 
 .sequence-match-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px;
+  display: flex;
+  overflow-x: auto;
+  gap: 12px;
+  padding-bottom: 12px;
 }
 
 .relation-output-help {
@@ -5409,6 +5410,8 @@ body[data-tab="discover"] .main-panel {
   border-left: 3px solid var(--accent);
   border-radius: 8px;
   background: #fff;
+  min-width: 240px;
+  flex: 0 0 auto;
 }
 
 .sequence-match-card span,

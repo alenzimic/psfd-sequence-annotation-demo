@@ -68,6 +68,11 @@ const state = {
   relationOutputSpeciesFilter: "all",
   relationOutputTissueFilter: "all",
   relationOutputDirectOnly: false,
+  relationEvalue: 0.001,
+  relationMinSeqId: "",
+  relationK: 5,
+  relationMinSimilarity: "",
+  showAdvancedSearchOptions: false,
   relationOutputBestContextOnly: false,
   sequenceIndex: null,
   sequenceIndexLoading: false,
@@ -383,6 +388,12 @@ function installGlobalHandlers() {
       state[key] = target.checked;
     } else if (target instanceof HTMLInputElement && target.type === "radio") {
       if (target.checked) state[key] = target.value;
+    } else if (target instanceof HTMLInputElement) {
+      if (target.type === "number") {
+        state[key] = target.value === "" ? "" : Number(target.value);
+      } else {
+        state[key] = target.value;
+      }
     } else if (target instanceof HTMLSelectElement) {
       state[key] = target.value;
     }
@@ -712,6 +723,10 @@ function runButtonAction(action, id, actionTarget) {
       state.listPage = 0;
       render();
       return true;
+    case "toggle-advanced-search":
+      state.showAdvancedSearchOptions = !state.showAdvancedSearchOptions;
+      render();
+      return true;
     case "toggle-disclosure":
       toggleDisclosure(id);
       return true;
@@ -775,8 +790,9 @@ async function init() {
 }
 
 async function fetchJson(path) {
-  const response = await fetch(path, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Could not load ${path}: ${response.status}`);
+  const url = path.startsWith('http') ? path : `http://localhost:8999/api/${path}`;
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Could not load ${url}: ${response.status}`);
   return response.json();
 }
 
@@ -4815,6 +4831,46 @@ function renderDiscoverWorkbench() {
                   <span>Deep Learning Embeddings (ESM-C + FAISS)</span>
                 </label>
               </div>
+
+              <div class="advanced-settings-toggle-container" style="margin-top: 12px;">
+                <button type="button" class="btn btn-secondary advanced-settings-toggle-btn" data-action="toggle-advanced-search" style="font-size: 0.85em; padding: 4px 8px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; background: #f0f0f0;">
+                  ${state.showAdvancedSearchOptions ? "Hide Advanced Search Tools ▴" : "Advanced Search Tools ▾"}
+                </button>
+              </div>
+
+              ${state.showAdvancedSearchOptions ? `
+                <div class="advanced-search-panel" style="margin-top: 12px; padding: 12px; border: 1px dashed #ccc; border-radius: 4px; background: #fafafa;">
+                  ${state.relationSearchMethod === "seq2graph" ? `
+                    <div class="advanced-params-group">
+                      <h4 style="margin: 0 0 8px 0; font-size: 0.9em; color: #555;">MMSeqs2 Search Parameters</h4>
+                      <div class="params-row" style="display: flex; gap: 16px;">
+                        <label class="param-input-label" style="display: flex; flex-direction: column; font-size: 0.85em;">
+                          <span style="margin-bottom: 4px; color: #666;">E-Value Threshold:</span>
+                          <input type="number" step="any" min="0" data-state-key="relationEvalue" value="${state.relationEvalue !== undefined ? state.relationEvalue : 0.001}" placeholder="0.001" style="padding: 4px; width: 120px; border: 1px solid #ccc; border-radius: 4px;">
+                        </label>
+                        <label class="param-input-label" style="display: flex; flex-direction: column; font-size: 0.85em;">
+                          <span style="margin-bottom: 4px; color: #666;">Min Sequence Identity:</span>
+                          <input type="number" step="any" min="0" max="1" data-state-key="relationMinSeqId" value="${state.relationMinSeqId !== undefined ? state.relationMinSeqId : ""}" placeholder="e.g. 0.3" style="padding: 4px; width: 120px; border: 1px solid #ccc; border-radius: 4px;">
+                        </label>
+                      </div>
+                    </div>
+                  ` : `
+                    <div class="advanced-params-group">
+                      <h4 style="margin: 0 0 8px 0; font-size: 0.9em; color: #555;">ESM-C + FAISS Search Parameters</h4>
+                      <div class="params-row" style="display: flex; gap: 16px;">
+                        <label class="param-input-label" style="display: flex; flex-direction: column; font-size: 0.85em;">
+                          <span style="margin-bottom: 4px; color: #666;">Max Result Hits (k):</span>
+                          <input type="number" min="1" step="1" data-state-key="relationK" value="${state.relationK !== undefined ? state.relationK : 5}" placeholder="5" style="padding: 4px; width: 120px; border: 1px solid #ccc; border-radius: 4px;">
+                        </label>
+                        <label class="param-input-label" style="display: flex; flex-direction: column; font-size: 0.85em;">
+                          <span style="margin-bottom: 4px; color: #666;">Min Similarity Threshold:</span>
+                          <input type="number" step="any" min="0" max="1" data-state-key="relationMinSimilarity" value="${state.relationMinSimilarity !== undefined ? state.relationMinSimilarity : ""}" placeholder="e.g. 0.7" style="padding: 4px; width: 120px; border: 1px solid #ccc; border-radius: 4px;">
+                        </label>
+                      </div>
+                    </div>
+                  `}
+                </div>
+              ` : ""}
             </div>
           `}
         </div>
@@ -4863,7 +4919,28 @@ function relationAttributeCheckbox(id, label) {
   `;
 }
 
-
+function getCollapsedFastaMatches(matches) {
+  const grouped = {};
+  for (const m of matches) {
+    const key = m.accession || m.entity_label;
+    if (!grouped[key]) {
+      grouped[key] = [];
+    }
+    grouped[key].push(m);
+  }
+  
+  const collapsed = [];
+  for (const key in grouped) {
+    const list = grouped[key];
+    list.sort((a, b) => (b.kmer_score || 0) - (a.kmer_score || 0));
+    const rep = { ...list[0] };
+    rep.stackedCount = list.length;
+    rep.allMatches = list;
+    collapsed.push(rep);
+  }
+  collapsed.sort((a, b) => (b.kmer_score || 0) - (a.kmer_score || 0));
+  return collapsed;
+}
 
 function renderRelationExtractionResults() {
   if (!state.relationExtractionResults.length && !state.relationSequenceMatches.length) {
@@ -4876,16 +4953,17 @@ function renderRelationExtractionResults() {
   }
   const filteredRows = relationFilteredExtractionResults();
   const rows = filteredRows.slice(0, 80);
+  const collapsedMatches = getCollapsedFastaMatches(state.relationSequenceMatches);
   return `
     <div class="relation-extraction-results">
       ${state.relationSequenceMatches.length ? `
         <section class="sequence-match-strip">
           <div class="annotation-section-head">
             <h5>FASTA matches</h5>
-            <span>${fmt(state.relationSequenceMatches.length)} hit${state.relationSequenceMatches.length === 1 ? "" : "s"}</span>
+            <span>${fmt(collapsedMatches.length)} protein${collapsedMatches.length === 1 ? "" : "s"} (${fmt(state.relationSequenceMatches.length)} total hits)</span>
           </div>
           <div class="sequence-match-grid">
-            ${state.relationSequenceMatches.slice(0, 6).map(sequenceMatchCard).join("")}
+            ${collapsedMatches.map(sequenceMatchCard).join("")}
           </div>
         </section>
       ` : ""}
@@ -5275,11 +5353,20 @@ function sequenceMatchCard(match) {
     scoreLabel = "cosine similarity";
     scoreValue = match.kmer_score.toFixed(4);
   }
+
+  const stackBadge = match.stackedCount > 1 
+    ? `<span style="font-size: 10px; background: #0070f3; color: white; padding: 1px 5px; border-radius: 10px; margin-left: 5px; display: inline-block; vertical-align: middle;">${match.stackedCount} hits</span>` 
+    : "";
+
+  const pmcidDisplay = match.stackedCount > 1 
+    ? `${match.stackedCount} articles` 
+    : match.pmcid;
+
   return `
     <article class="sequence-match-card">
       <span>${esc(match.query_name)}</span>
-      <strong>${esc(match.entity_label)}</strong>
-      <small>${esc([match.accession, match.pmcid].filter(Boolean).join(" | "))}</small>
+      <strong>${esc(match.entity_label)} ${stackBadge}</strong>
+      <small>${esc([match.accession, pmcidDisplay].filter(Boolean).join(" | "))}</small>
       <div>
         <b>${scoreValue}</b>
         <em>${scoreLabel}</em>
@@ -5306,7 +5393,7 @@ async function runRelationExtraction() {
     await loadGlobalPathIndex();
 
     const isCompoundTab = state.relationActiveSubTab === "compound";
-    const compoundEntities = isCompoundTab ? relationCompoundEntities() : [];
+    const compoundEntities = isCompoundTab ? await relationCompoundEntities() : [];
     
     const hasFasta = !isCompoundTab && parseFastaRecords(state.relationFastaInput).length > 0;
     if (hasFasta) {
@@ -5324,7 +5411,27 @@ async function runRelationExtraction() {
       ...fastaMatches.map((match) => ({ queryName: match.entity_label, entity: match.entity, source: "fasta", match })),
     ];
 
-    const rows = relationRowsForQueryEntities(queryEntities);
+    // Fetch the relationship rows directly from the backend API
+    const extractResponse = await fetch('http://localhost:8999/api/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        compounds: isCompoundTab ? state.relationCompoundInput : "",
+        fasta: !isCompoundTab ? state.relationFastaInput : "",
+        attributes: state.relationAttributeFilters,
+        method: state.relationSearchMethod,
+        evalue: state.showAdvancedSearchOptions && state.relationSearchMethod === "seq2graph" && state.relationEvalue !== "" ? Number(state.relationEvalue) : null,
+        min_seq_id: state.showAdvancedSearchOptions && state.relationSearchMethod === "seq2graph" && state.relationMinSeqId !== "" ? Number(state.relationMinSeqId) : null,
+        k: state.showAdvancedSearchOptions && state.relationSearchMethod === "embed2graph" && state.relationK !== "" ? Number(state.relationK) : null,
+        min_similarity: state.showAdvancedSearchOptions && state.relationSearchMethod === "embed2graph" && state.relationMinSimilarity !== "" ? Number(state.relationMinSimilarity) : null
+      })
+    });
+    
+    if (!extractResponse.ok) {
+      throw new Error("Failed to extract relations from API.");
+    }
+    
+    const rows = await extractResponse.json();
     state.relationExtractionResults = rows;
     resetRelationOutputFilters();
     const submittedCount = compoundEntities.length + parseFastaRecords(state.relationFastaInput).length;
@@ -5357,14 +5464,23 @@ async function runRelationExtraction() {
   }
 }
 
-function relationCompoundEntities() {
+async function relationCompoundEntities() {
   const terms = uniqueStrings(String(state.relationCompoundInput || "")
     .split(/[\n;,]+/)
     .map((term) => term.trim())
     .filter(Boolean));
-  return terms
-    .map((term) => ({ term, entity: rankedEntityMatches(term, "compound")[0] || null }))
-    .filter((item) => item.entity);
+    
+  if (!terms.length) return [];
+  
+  const response = await fetch('http://localhost:8999/api/resolve_entities', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ terms: terms, category: "compound" })
+  });
+  if (!response.ok) throw new Error("Failed to resolve compound entities.");
+  
+  const results = await response.json();
+  return results; // [{ term, entity }]
 }
 
 async function relationFastaMatches() {
@@ -5375,18 +5491,24 @@ async function relationFastaMatches() {
 
   for (const query of queries) {
     try {
-      // POST the query sequence to the FastAPI server running on Port 8899
-      const response = await fetch('http://localhost:8899/search', {
+      // POST the query sequence to the FastAPI server running on Port 8999
+      const response = await fetch('http://localhost:8999/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sequence: query.sequence,
-          method: state.relationSearchMethod
+          method: state.relationSearchMethod,
+          evalue: state.showAdvancedSearchOptions && state.relationSearchMethod === "seq2graph" && state.relationEvalue !== "" ? Number(state.relationEvalue) : null,
+          min_seq_id: state.showAdvancedSearchOptions && state.relationSearchMethod === "seq2graph" && state.relationMinSeqId !== "" ? Number(state.relationMinSeqId) : null,
+          k: state.showAdvancedSearchOptions && state.relationSearchMethod === "embed2graph" && state.relationK !== "" ? Number(state.relationK) : null,
+          min_similarity: state.showAdvancedSearchOptions && state.relationSearchMethod === "embed2graph" && state.relationMinSimilarity !== "" ? Number(state.relationMinSimilarity) : null
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Server returned status: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`FastAPI returned ${response.status}:`, errorText);
+        throw new Error(`Server returned status: ${response.status}. Details: ${errorText}`);
       }
 
       const results = await response.json(); // Array of target matches
@@ -5396,11 +5518,11 @@ async function relationFastaMatches() {
       console.log("Raw results:", results);
       console.groupEnd();
 
-      // Map resolved nodes back to the UI globalPathIndexes entity lookup
+      // Use the resolved entities provided by the API backend
       for (const item of results) {
         if (!item.global_node_id) continue;
 
-        const entities = state.globalPathIndexes?.entitiesByGlobalId?.get(item.global_node_id) || [];
+        const entities = item.entities || [];
         for (const entity of entities) {
           matches.push({
             query_name: query.name,
@@ -7822,20 +7944,28 @@ function pathLegend() {
 }
 
 async function loadGlobalPathIndex() {
-  if (state.globalPathIndex) return;
-  if (state.globalPathPromise) return state.globalPathPromise;
-  state.globalPathLoading = true;
-  state.globalPathPromise = fetchJson("data/global_path_index.json")
-    .then((payload) => {
-      const normalized = normalizeGlobalRelations(payload);
-      state.globalPathIndex = normalized;
-      state.globalPathIndexes = buildGlobalPathIndexes(normalized);
-    })
-    .finally(() => {
-      state.globalPathLoading = false;
-      state.globalPathPromise = null;
-    });
-  return state.globalPathPromise;
+  // Global Path Index is disabled because the 5GB file crashes the browser.
+  // The backend API now handles global sequence annotation and entity resolution.
+  if (!state.globalPathIndex) {
+    state.globalPathIndex = { entities: [] };
+    try {
+      const stats = await fetchJson("stats");
+      state.globalPathIndex.stats = stats;
+    } catch (error) {
+      console.error("Could not load database stats:", error);
+    }
+    state.globalPathIndexes = {
+      entitiesByGlobalId: new Map(),
+      conceptById: new Map(),
+      entityById: new Map(),
+      relationsByEntity: new Map(),
+      eventsByEntity: new Map(),
+      relationById: new Map(),
+      eventById: new Map(),
+      dependencyById: new Map()
+    };
+  }
+  return Promise.resolve();
 }
 
 function buildGlobalPathIndexes(payload) {
