@@ -69,9 +69,10 @@ const state = {
   relationOutputTissueFilter: "all",
   relationOutputDirectOnly: false,
   relationEvalue: 0.001,
-  relationMinSeqId: "",
+  relationMinSeqId: "0.8",
   relationK: 5,
   relationMinSimilarity: "",
+  relationSelectedMatchEntity: null,
   showAdvancedSearchOptions: false,
   relationOutputBestContextOnly: false,
   sequenceIndex: null,
@@ -630,6 +631,14 @@ function runAnnotationControlAction(target) {
   const example = target.getAttribute("data-annotation-example");
   if (example !== null) {
     window.setTimeout(() => setAnnotationExample(example), 0);
+    return true;
+  }
+  const selectedFastaMatch = target.getAttribute("data-annotation-select-fasta-match");
+  if (selectedFastaMatch !== null) {
+    window.setTimeout(() => {
+      state.relationSelectedMatchEntity = selectedFastaMatch;
+      render();
+    }, 0);
     return true;
   }
   const selectedMatch = target.getAttribute("data-annotation-select-match");
@@ -4954,6 +4963,8 @@ function renderRelationExtractionResults() {
   const filteredRows = relationFilteredExtractionResults();
   const rows = filteredRows.slice(0, 80);
   const collapsedMatches = getCollapsedFastaMatches(state.relationSequenceMatches);
+  const uniqueQueries = new Set(collapsedMatches.map(m => m.query_name));
+  const showQueryName = uniqueQueries.size > 1;
   return `
     <div class="relation-extraction-results">
       ${state.relationSequenceMatches.length ? `
@@ -4963,7 +4974,7 @@ function renderRelationExtractionResults() {
             <span>${fmt(collapsedMatches.length)} protein${collapsedMatches.length === 1 ? "" : "s"} (${fmt(state.relationSequenceMatches.length)} total hits)</span>
           </div>
           <div class="sequence-match-grid">
-            ${collapsedMatches.map(sequenceMatchCard).join("")}
+            ${collapsedMatches.map(m => sequenceMatchCard(m, showQueryName)).join("")}
           </div>
         </section>
       ` : ""}
@@ -5048,6 +5059,10 @@ function resetRelationOutputFilters() {
 
 function relationFilteredExtractionResults() {
   return state.relationExtractionResults.filter((row) => {
+    if (state.relationSelectedMatchEntity && row.query_name) {
+      const selectedMatch = state.relationSequenceMatches.find(m => (m.accession || m.entity_label) === state.relationSelectedMatchEntity);
+      if (selectedMatch && row.query_name !== selectedMatch.entity_label) return false;
+    }
     if (state.relationOutputAttributeFilter !== "all" && row.attribute_type !== state.relationOutputAttributeFilter) return false;
     if (state.relationOutputSpeciesFilter !== "all" && !relationOutputContextItemsByKind(row, "species").includes(state.relationOutputSpeciesFilter)) return false;
     if (state.relationOutputTissueFilter !== "all" && !relationOutputContextItemsByKind(row, "tissue").includes(state.relationOutputTissueFilter)) return false;
@@ -5340,7 +5355,7 @@ function relationOutputContextKind(item) {
   return { key: "other", label: "Other", description: "Other experimental or biological context" };
 }
 
-function sequenceMatchCard(match) {
+function sequenceMatchCard(match, showQueryName = false) {
   let scoreLabel = "k-mer score";
   let scoreValue = `${Math.round(match.kmer_score * 100)}%`;
   
@@ -5362,9 +5377,12 @@ function sequenceMatchCard(match) {
     ? `${match.stackedCount} articles` 
     : match.pmcid;
 
+  const matchKey = match.accession || match.entity_label;
+  const isActive = state.relationSelectedMatchEntity === matchKey;
+
   return `
-    <article class="sequence-match-card">
-      <span>${esc(match.query_name)}</span>
+    <article class="sequence-match-card ${isActive ? "active" : ""}" style="cursor: pointer;" data-annotation-action="select-fasta-match" data-annotation-select-fasta-match="${esc(matchKey)}">
+      ${showQueryName && match.query_name ? `<span>${esc(match.query_name)}</span>` : ""}
       <strong>${esc(match.entity_label)} ${stackBadge}</strong>
       <small>${esc([match.accession, pmcidDisplay].filter(Boolean).join(" | "))}</small>
       <div>
@@ -5406,6 +5424,12 @@ async function runRelationExtraction() {
 
     const fastaMatches = hasFasta ? await relationFastaMatches() : [];
     state.relationSequenceMatches = fastaMatches;
+    if (fastaMatches.length > 0) {
+      const collapsed = getCollapsedFastaMatches(fastaMatches);
+      state.relationSelectedMatchEntity = collapsed[0].accession || collapsed[0].entity_label;
+    } else {
+      state.relationSelectedMatchEntity = null;
+    }
     const queryEntities = [
       ...compoundEntities.map((item) => ({ queryName: item.term, entity: item.entity, source: "compound" })),
       ...fastaMatches.map((match) => ({ queryName: match.entity_label, entity: match.entity, source: "fasta", match })),
@@ -5420,10 +5444,10 @@ async function runRelationExtraction() {
         fasta: !isCompoundTab ? state.relationFastaInput : "",
         attributes: state.relationAttributeFilters,
         method: state.relationSearchMethod,
-        evalue: state.showAdvancedSearchOptions && state.relationSearchMethod === "seq2graph" && state.relationEvalue !== "" ? Number(state.relationEvalue) : null,
-        min_seq_id: state.showAdvancedSearchOptions && state.relationSearchMethod === "seq2graph" && state.relationMinSeqId !== "" ? Number(state.relationMinSeqId) : null,
-        k: state.showAdvancedSearchOptions && state.relationSearchMethod === "embed2graph" && state.relationK !== "" ? Number(state.relationK) : null,
-        min_similarity: state.showAdvancedSearchOptions && state.relationSearchMethod === "embed2graph" && state.relationMinSimilarity !== "" ? Number(state.relationMinSimilarity) : null
+        evalue: state.relationSearchMethod === "seq2graph" && state.relationEvalue !== "" ? Number(state.relationEvalue) : null,
+        min_seq_id: state.relationSearchMethod === "seq2graph" && state.relationMinSeqId !== "" ? Number(state.relationMinSeqId) : null,
+        k: state.relationSearchMethod === "embed2graph" && state.relationK !== "" ? Number(state.relationK) : null,
+        min_similarity: state.relationSearchMethod === "embed2graph" && state.relationMinSimilarity !== "" ? Number(state.relationMinSimilarity) : null
       })
     });
     
@@ -5491,17 +5515,16 @@ async function relationFastaMatches() {
 
   for (const query of queries) {
     try {
-      // POST the query sequence to the FastAPI server running on Port 8999
       const response = await fetch('http://localhost:8999/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sequence: query.sequence,
           method: state.relationSearchMethod,
-          evalue: state.showAdvancedSearchOptions && state.relationSearchMethod === "seq2graph" && state.relationEvalue !== "" ? Number(state.relationEvalue) : null,
-          min_seq_id: state.showAdvancedSearchOptions && state.relationSearchMethod === "seq2graph" && state.relationMinSeqId !== "" ? Number(state.relationMinSeqId) : null,
-          k: state.showAdvancedSearchOptions && state.relationSearchMethod === "embed2graph" && state.relationK !== "" ? Number(state.relationK) : null,
-          min_similarity: state.showAdvancedSearchOptions && state.relationSearchMethod === "embed2graph" && state.relationMinSimilarity !== "" ? Number(state.relationMinSimilarity) : null
+          evalue: state.relationSearchMethod === "seq2graph" && state.relationEvalue !== "" ? Number(state.relationEvalue) : null,
+          min_seq_id: state.relationSearchMethod === "seq2graph" && state.relationMinSeqId !== "" ? Number(state.relationMinSeqId) : null,
+          k: state.relationSearchMethod === "embed2graph" && state.relationK !== "" ? Number(state.relationK) : null,
+          min_similarity: state.relationSearchMethod === "embed2graph" && state.relationMinSimilarity !== "" ? Number(state.relationMinSimilarity) : null
         })
       });
 
@@ -5511,14 +5534,13 @@ async function relationFastaMatches() {
         throw new Error(`Server returned status: ${response.status}. Details: ${errorText}`);
       }
 
-      const results = await response.json(); // Array of target matches
+      const results = await response.json();
       
       console.log(`SUCCESS: FastAPI search returned ${results.length} results.`);
       console.groupCollapsed("[LOG] Detailed FastAPI search results");
       console.log("Raw results:", results);
       console.groupEnd();
 
-      // Use the resolved entities provided by the API backend
       for (const item of results) {
         if (!item.global_node_id) continue;
 
@@ -5530,7 +5552,7 @@ async function relationFastaMatches() {
             entity_label: pathEntityName(entity),
             pmcid: entity.pmcid || "",
             accession: item.uniprot_id,
-            kmer_score: item.score || 1.0, // Scale similarity score
+            kmer_score: item.score || 1.0,
             score_type: item.score_type,
             search_method: state.relationSearchMethod,
             query_coverage: 1.0,
@@ -5574,12 +5596,12 @@ function cleanProteinSequence(sequence) {
   return String(sequence || "").toUpperCase().replace(/[^A-Z*]/g, "").replaceAll("*", "");
 }
 
-
-
 function relationRowsForQueryEntities(queryEntities) {
   const seen = new Set();
   const rows = [];
+  const selectedKey = state.relationSelectedMatchEntity;
   queryEntities.forEach(({ queryName, entity, match }) => {
+    if (selectedKey && match && (match.accession || match.entity_label) !== selectedKey) return;
     const relations = state.globalPathIndexes?.relationsByEntity?.get(entity.id) || [];
     relations.forEach((rel) => {
       if (!relationHasEndpoint(rel, entity.id)) return;
@@ -5678,6 +5700,7 @@ async function setRelationExtractionExample(kind) {
   }
   state.relationExtractionResults = [];
   state.relationSequenceMatches = [];
+  state.relationSelectedMatchEntity = null;
   resetRelationOutputFilters();
   state.relationExtractionStatus = kind === "fasta" || kind === "exact-fasta"
     ? "Loaded an exact OsMYB55 FASTA record from the PSFD-linked sequence database."
@@ -5724,7 +5747,8 @@ function exportRelationExtractionTable() {
     "similarity_score",
     "similarity_score_type"
   ];
-  const rows = state.relationExtractionResults.map((row) => [
+  const sortedResults = [...state.relationExtractionResults].sort((a, b) => (b.score || 0) - (a.score || 0));
+  const rows = sortedResults.map((row) => [
     row.query_name,
     row.relation,
     row.context,

@@ -5414,6 +5414,16 @@ body[data-tab="discover"] .main-panel {
   flex: 0 0 auto;
 }
 
+.sequence-match-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.sequence-match-card.active {
+  border: 2px solid var(--accent-dark);
+  background: #f4fbf8;
+}
+
 .sequence-match-card span,
 .sequence-match-card small,
 .sequence-match-card p {
