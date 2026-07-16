@@ -4831,12 +4831,20 @@ function renderDiscoverWorkbench() {
         <div class="relation-subtabs-container" role="tablist" aria-label="Query type">
           <button class="relation-subtab ${state.relationActiveSubTab === "compound" ? "active" : ""}" data-relation-tab="compound" type="button" role="tab" aria-selected="${state.relationActiveSubTab === "compound"}">Compound Lookup</button>
           <button class="relation-subtab ${state.relationActiveSubTab === "sequence" ? "active" : ""}" data-relation-tab="sequence" type="button" role="tab" aria-selected="${state.relationActiveSubTab === "sequence"}">Sequence Search</button>
+          <button class="relation-subtab ${state.relationActiveSubTab === "enrichment" ? "active" : ""}" data-relation-tab="enrichment" type="button" role="tab" aria-selected="${state.relationActiveSubTab === "enrichment"}">Enrichment Search</button>
         </div>
 
         <div class="relation-tab-content">
           ${state.relationActiveSubTab === "compound" ? `
             <div class="query-box compound-query-box" role="tabpanel">
               <textarea id="relationCompoundInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="piperonylic acid&#10;GABA&#10;ABA">${esc(state.relationCompoundInput)}</textarea>
+            </div>
+          ` : state.relationActiveSubTab === "enrichment" ? `
+            <div class="query-box enrichment-query-box" role="tabpanel">
+              <select id="relationEnrichmentInput" size="12" style="width: 100%; min-height: 230px; border: 1px solid #b7cac3; border-radius: 8px; background: #fbfdfc; color: inherit; font-family: inherit; font-size: 14px; padding: 8px; outline: none; box-sizing: border-box;">
+                <option value="" disabled ${!state.relationEnrichmentInput ? "selected" : ""}>Select an enrichment trait...</option>
+                ${(state.globalEnrichments || []).map(e => `<option value="${esc(e.label || e.ontology_id)}" ${state.relationEnrichmentInput === (e.label || e.ontology_id) ? "selected" : ""}>${esc(e.label || e.ontology_id)}</option>`).join("")}
+              </select>
             </div>
           ` : `
             <div class="query-box fasta-query-box" role="tabpanel">
@@ -4958,6 +4966,13 @@ function getCollapsedFastaMatches(matches) {
     const rep = { ...list[0] };
     rep.stackedCount = list.length;
     rep.allMatches = list;
+    
+    // Check enrichment filter
+    if (state.relationOutputEnrichmentFilter && state.relationOutputEnrichmentFilter !== "all") {
+        const hasEnrichment = rep.entity?.enrichments?.some(e => (e.trait_label || e.trait_concept) === state.relationOutputEnrichmentFilter);
+        if (!hasEnrichment) continue;
+    }
+    
     collapsed.push(rep);
   }
   collapsed.sort((a, b) => (b.kmer_score || 0) - (a.kmer_score || 0));
@@ -4978,6 +4993,13 @@ function renderRelationExtractionResults() {
   const collapsedMatches = getCollapsedFastaMatches(state.relationSequenceMatches);
   const uniqueQueries = new Set(collapsedMatches.map(m => m.query_name));
   const showQueryName = uniqueQueries.size > 1;
+  const selectedMatch = state.relationSelectedMatchEntity ? state.relationSequenceMatches.find(m => (m.accession || m.entity_label) === state.relationSelectedMatchEntity) : null;
+  const enrichmentsHtml = selectedMatch?.entity?.enrichments?.length ? `
+    <div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card);">
+      <h3 style="margin-top: 0; margin-bottom: 8px;">Enriched Traits for ${esc(selectedMatch.entity_label)}</h3>
+      <div>${badges(selectedMatch.entity.enrichments.map(e => e.trait_label || e.trait_concept), "enrichment", 20)}</div>
+    </div>
+  ` : "";
   return `
     <div class="relation-extraction-results">
       ${state.relationSequenceMatches.length ? `
@@ -5002,6 +5024,7 @@ function renderRelationExtractionResults() {
         ${relationOutputHelpDrawer()}
         ${relationOutputFilters()}
         ${relationDownloadSchema()}
+        ${enrichmentsHtml}
         ${rows.length ? relationExtractionGroupedResults(rows) : `<div class="annotation-empty compact">No rows match the active filters.</div>`}
         ${filteredRows.length > rows.length ? `<p class="muted tiny">Showing first ${fmt(rows.length)} filtered rows. The download includes all extracted rows.</p>` : ""}
       </section>
@@ -5024,10 +5047,11 @@ function relationOutputHelpDrawer() {
 }
 
 function relationOutputFilters() {
-  if (!state.relationExtractionResults.length) return "";
+  if (!state.relationExtractionResults.length && !state.relationSequenceMatches.length) return "";
   const options = relationOutputFilterOptions(state.relationExtractionResults);
   return `
     <div class="relation-output-filters" aria-label="Relationship output filters">
+      ${relationOutputSelect("Enrichment (Protein Trait)", "relationOutputEnrichmentFilter", options.enrichments)}
       ${relationOutputSelect("Attribute", "relationOutputAttributeFilter", options.attributes)}
       ${relationOutputSelect("Species", "relationOutputSpeciesFilter", options.species)}
       ${relationOutputSelect("Tissue/site", "relationOutputTissueFilter", options.tissues)}
@@ -5056,13 +5080,15 @@ function relationOutputSelect(label, key, values) {
 }
 
 function relationOutputFilterOptions(rows) {
+  const enrichments = uniqueStrings((state.relationSequenceMatches || []).flatMap(m => (m.entity?.enrichments || []).map(e => e.trait_label || e.trait_concept)).filter(Boolean)).sort((a, b) => a.localeCompare(b));
   const attributes = uniqueStrings(rows.map((row) => row.attribute_type).filter(Boolean)).sort((a, b) => a.localeCompare(b));
   const species = uniqueStrings(rows.flatMap((row) => relationOutputContextItemsByKind(row, "species"))).sort((a, b) => a.localeCompare(b));
   const tissues = uniqueStrings(rows.flatMap((row) => relationOutputContextItemsByKind(row, "tissue"))).sort((a, b) => a.localeCompare(b));
-  return { attributes, species, tissues };
+  return { enrichments, attributes, species, tissues };
 }
 
 function resetRelationOutputFilters() {
+  state.relationOutputEnrichmentFilter = "all";
   state.relationOutputAttributeFilter = "all";
   state.relationOutputSpeciesFilter = "all";
   state.relationOutputTissueFilter = "all";
@@ -5071,7 +5097,15 @@ function resetRelationOutputFilters() {
 }
 
 function relationFilteredExtractionResults() {
+  const collapsedMatches = getCollapsedFastaMatches(state.relationSequenceMatches);
+  const validEntityLabels = new Set(collapsedMatches.map(m => m.entity_label));
+  
   return state.relationExtractionResults.filter((row) => {
+    // If the left side (FASTA) is filtered by enrichment, filter rows to match those surviving hits
+    if (state.relationSequenceMatches.length && row.query_name && !validEntityLabels.has(row.query_name)) {
+        return false;
+    }
+    
     if (state.relationSelectedMatchEntity && row.query_name) {
       const selectedMatch = state.relationSequenceMatches.find(m => (m.accession || m.entity_label) === state.relationSelectedMatchEntity);
       if (selectedMatch && row.query_name !== selectedMatch.entity_label) return false;
@@ -5403,7 +5437,6 @@ function sequenceMatchCard(match, showQueryName = false) {
         <em>${scoreLabel}</em>
       </div>
       <p>${esc(`Query coverage ${Math.round(match.query_coverage * 100)}%, target coverage ${Math.round(match.target_coverage * 100)}%`)}</p>
-      ${match.entity?.enrichments?.length ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-color);"><div class="key" style="margin-bottom: 4px;">Enriched Traits</div><div>${badges(match.entity.enrichments.map(e => e.trait_label || e.trait_concept), "enrichment", 4)}</div></div>` : ""}
     </article>
   `;
 }
@@ -5413,8 +5446,10 @@ async function runRelationExtraction() {
   try {
     const compoundInput = document.getElementById("relationCompoundInput");
     const fastaInput = document.getElementById("relationFastaInput");
+    const enrichmentInput = document.getElementById("relationEnrichmentInput");
     if (compoundInput) state.relationCompoundInput = compoundInput.value;
     if (fastaInput) state.relationFastaInput = fastaInput.value;
+    if (enrichmentInput) state.relationEnrichmentInput = enrichmentInput.value;
     document.querySelectorAll("[data-relation-attribute]").forEach((input) => {
       state.relationAttributeFilters[input.getAttribute("data-relation-attribute")] = input.checked;
     });
@@ -5425,18 +5460,25 @@ async function runRelationExtraction() {
     await loadGlobalPathIndex();
 
     const isCompoundTab = state.relationActiveSubTab === "compound";
+    const isEnrichmentTab = state.relationActiveSubTab === "enrichment";
+    
     const compoundEntities = isCompoundTab ? await relationCompoundEntities() : [];
     
-    const hasFasta = !isCompoundTab && parseFastaRecords(state.relationFastaInput).length > 0;
+    const hasFasta = (!isCompoundTab && !isEnrichmentTab) && parseFastaRecords(state.relationFastaInput).length > 0;
+    const hasEnrichment = isEnrichmentTab && state.relationEnrichmentInput;
+    
     if (hasFasta) {
       state.relationExtractionStatus = "Querying FastAPI server for sequence matches...";
+      render();
+    } else if (hasEnrichment) {
+      state.relationExtractionStatus = "Querying FastAPI server for enrichment matches...";
       render();
     } else {
       state.relationExtractionStatus = "Extracting relationships from index...";
       render();
     }
 
-    const fastaMatches = hasFasta ? await relationFastaMatches() : [];
+    const fastaMatches = hasFasta ? await relationFastaMatches() : hasEnrichment ? await relationEnrichmentMatches() : [];
     state.relationSequenceMatches = fastaMatches;
     if (fastaMatches.length > 0) {
       const collapsed = getCollapsedFastaMatches(fastaMatches);
@@ -5455,7 +5497,8 @@ async function runRelationExtraction() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         compounds: isCompoundTab ? state.relationCompoundInput : "",
-        fasta: !isCompoundTab ? state.relationFastaInput : "",
+        fasta: (!isCompoundTab && !isEnrichmentTab) ? state.relationFastaInput : "",
+        enrichments: isEnrichmentTab ? state.relationEnrichmentInput : "",
         attributes: state.relationAttributeFilters,
         method: state.relationSearchMethod,
         evalue: state.relationSearchMethod === "seq2graph" && state.relationEvalue !== "" ? Number(state.relationEvalue) : null,
@@ -5580,6 +5623,49 @@ async function relationFastaMatches() {
     }
   }
 
+  return matches;
+}
+
+async function relationEnrichmentMatches() {
+  const terms = uniqueStrings(String(state.relationEnrichmentInput || "")
+    .split(/[\n;,]+/)
+    .map((term) => term.trim())
+    .filter(Boolean));
+
+  if (!terms.length) return [];
+
+  const matches = [];
+  for (const term of terms) {
+    try {
+      const response = await fetch('http://localhost:8999/api/search_by_enrichment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ term })
+      });
+      if (!response.ok) throw new Error("Failed to search by enrichment.");
+      const results = await response.json();
+      for (const item of results) {
+        if (!item.global_node_id) continue;
+        for (const entity of item.entities || []) {
+          matches.push({
+            query_name: term,
+            entity,
+            entity_label: pathEntityName(entity),
+            pmcid: entity.pmcid || "",
+            accession: item.uniprot_id,
+            kmer_score: item.score || 1.0,
+            score_type: item.score_type,
+            search_method: "enrichment",
+            query_coverage: 1.0,
+            target_coverage: 1.0,
+          });
+        }
+      }
+    } catch (err) {
+      console.error(`FastAPI search failed for query ${term}:`, err);
+      throw err;
+    }
+  }
   return matches;
 }
 
@@ -7652,7 +7738,6 @@ function annotationMatchCard(entity, index = 0) {
         <div class="annotation-id-strip">
           ${ids.length ? badges(ids, "ontology", 6) : `<span class="badge review">unmapped</span>`}
         </div>
-        ${entity.enrichments?.length ? `<div style="margin-top: 4px; font-size: 11px;"><b>Enriched:</b> ${badges(entity.enrichments.map(e => e.trait_label || e.trait_concept), "enrichment", 4)}</div>` : ""}
         ${metadata ? `<div class="annotation-metadata">${metadata}</div>` : ""}
         <small>${esc(entityResearchLine(entity))}</small>
         ${Object.keys(geneProfile).length ? annotationGeneActions(entity, geneProfile) : ""}
@@ -7992,6 +8077,17 @@ async function loadGlobalPathIndex() {
       state.globalPathIndex.stats = stats;
     } catch (error) {
       console.error("Could not load database stats:", error);
+    }
+    try {
+      const response = await fetch('http://localhost:8999/api/enriched_traits');
+      if (response.ok) {
+        state.globalEnrichments = await response.json();
+      } else {
+        state.globalEnrichments = [];
+      }
+    } catch (error) {
+      console.error("Could not load enriched traits:", error);
+      state.globalEnrichments = [];
     }
     state.globalPathIndexes = {
       entitiesByGlobalId: new Map(),
