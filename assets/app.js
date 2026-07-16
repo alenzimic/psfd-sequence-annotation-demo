@@ -15,6 +15,7 @@ const state = {
   orphanOnly: false,
   entityScope: "paper",
   entityType: "all",
+  enrichedTraitFilter: "all",
   relationClass: "all",
   normalizedOnly: false,
   pathStart: "",
@@ -87,6 +88,7 @@ const state = {
   globalPathLoading: false,
   globalPathPromise: null,
   returnStack: [],
+  enrichedTraits: [],
   indexes: null
 };
 
@@ -530,6 +532,7 @@ function sameViewState(a, b) {
     "query",
     "entityScope",
     "entityType",
+    "enrichedTraitFilter",
     "relationClass",
     "listPage"
   ].every((key) => String(a?.[key] ?? "") === String(b?.[key] ?? ""));
@@ -561,6 +564,7 @@ function applyViewState(view) {
     "orphanOnly",
     "entityScope",
     "entityType",
+    "enrichedTraitFilter",
     "relationClass",
     "normalizedOnly",
     "listPage"
@@ -788,6 +792,7 @@ async function init() {
   installGlobalHandlers();
   const manifest = await fetchJson("data/manifest.json");
   state.manifest = manifest;
+  state.enrichedTraits = await fetchJson("enriched_traits").catch(() => []);
   els.buildText.textContent = `Generated ${manifest.generated_at}`;
   els.paperSelect.innerHTML = manifest.papers.map((paper) => (
     `<option value="${esc(paper.pmcid)}">${esc(paper.pmcid)}</option>`
@@ -1289,6 +1294,11 @@ function renderFilters() {
         <option value="all">All entity types</option>
         ${types.map((item) => `<option value="${esc(item)}" ${state.entityType === item ? "selected" : ""}>${esc(clean(item))}</option>`).join("")}
       </select>
+      ${state.enrichedTraits?.length ? `
+      <select data-state-key="enrichedTraitFilter">
+        <option value="all">Any enriched trait (or none)</option>
+        ${state.enrichedTraits.map((item) => `<option value="${esc(item.ontology_id)}" ${state.enrichedTraitFilter === item.ontology_id ? "selected" : ""}>Enriched: ${esc(item.label || item.ontology_id)}</option>`).join("")}
+      </select>` : ""}
       ${check("normalizedOnly", "Only ontology-normalized entities")}
       ${state.entityScope === "all" ? `<div class="filter-note">${state.globalPathIndex ? `${fmt(state.globalPathIndex.entities.length)} entities across ${fmt(uniqueStrings(state.globalPathIndex.entities.map((entity) => entity.pmcid)).length)} papers.` : "Loading all-paper entity index..."}</div>` : ""}
     `, true);
@@ -1387,6 +1397,7 @@ function visibleEntities() {
   if (state.entityScope === "all") return visibleGlobalEntities();
   return state.data.entities
     .filter((entity) => state.entityType === "all" || entity.entity_type === state.entityType)
+    .filter((entity) => state.enrichedTraitFilter === "all" || (entity.enrichments || []).some((e) => e.trait_concept === state.enrichedTraitFilter))
     .filter((entity) => !state.normalizedOnly || entityOntologyIds(entity).length)
     .filter((entity) => queryMatches(entitySearchText(entity)))
     .sort((a, b) => {
@@ -1401,6 +1412,7 @@ function visibleGlobalEntities() {
   return state.globalPathIndex.entities
     .map(globalEntityToBrowseEntity)
     .filter((entity) => state.entityType === "all" || entity.entity_type === state.entityType)
+    .filter((entity) => state.enrichedTraitFilter === "all" || (entity.enrichments || []).some((e) => e.trait_concept === state.enrichedTraitFilter))
     .filter((entity) => !state.normalizedOnly || entityOntologyIds(entity).length)
     .filter((entity) => queryMatches(globalBrowseEntitySearchText(entity)))
     .sort((a, b) => {
@@ -3823,6 +3835,7 @@ function entitySummary(entity) {
         <div class="key">Ontology IDs</div><div>${ontologyIds.length ? badges(ontologyIds, "ontology", 8) : `<span class="muted">-</span>`}</div>
         <div class="key">Selected labels</div><div>${selectedLabels.length ? badges(selectedLabels, "", 8) : `<span class="muted">-</span>`}</div>
         <div class="key">Aliases</div><div>${badges(entity.aliases, "", 8)}</div>
+        ${entity.enrichments?.length ? `<div class="key">Enriched</div><div>${badges(entity.enrichments.map(e => e.trait_label || e.trait_concept), "enrichment", 8)}</div>` : ""}
       </div>
       ${entityDescriptionBlock(entity)}
     </div>
@@ -5390,6 +5403,7 @@ function sequenceMatchCard(match, showQueryName = false) {
         <em>${scoreLabel}</em>
       </div>
       <p>${esc(`Query coverage ${Math.round(match.query_coverage * 100)}%, target coverage ${Math.round(match.target_coverage * 100)}%`)}</p>
+      ${match.entity?.enrichments?.length ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-color);"><div class="key" style="margin-bottom: 4px;">Enriched Traits</div><div>${badges(match.entity.enrichments.map(e => e.trait_label || e.trait_concept), "enrichment", 4)}</div></div>` : ""}
     </article>
   `;
 }
@@ -7638,6 +7652,7 @@ function annotationMatchCard(entity, index = 0) {
         <div class="annotation-id-strip">
           ${ids.length ? badges(ids, "ontology", 6) : `<span class="badge review">unmapped</span>`}
         </div>
+        ${entity.enrichments?.length ? `<div style="margin-top: 4px; font-size: 11px;"><b>Enriched:</b> ${badges(entity.enrichments.map(e => e.trait_label || e.trait_concept), "enrichment", 4)}</div>` : ""}
         ${metadata ? `<div class="annotation-metadata">${metadata}</div>` : ""}
         <small>${esc(entityResearchLine(entity))}</small>
         ${Object.keys(geneProfile).length ? annotationGeneActions(entity, geneProfile) : ""}

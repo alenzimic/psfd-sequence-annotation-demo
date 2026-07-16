@@ -3120,6 +3120,12 @@ textarea {
   color: #325b78;
 }
 
+.badge.enrichment {
+  background: rgba(164, 71, 91, 0.1);
+  color: #a4475b;
+  border-color: rgba(164, 71, 91, 0.2);
+}
+
 .muted {
   color: var(--muted);
 }
