@@ -63,12 +63,15 @@ const state = {
     human_traits: false
   },
   relationExtractionResults: [],
-  relationSequenceMatches: [],
   relationExtractionStatus: "",
+  relationExtractionPage: 0,
   relationOutputAttributeFilter: "all",
   relationOutputSpeciesFilter: "all",
   relationOutputTissueFilter: "all",
+  relationOutputEnrichmentContextOnly: false,
   relationOutputDirectOnly: false,
+  relationOutputBestContextOnly: false,
+  relationSequenceMatches: [],
   relationEvalue: 0.001,
   relationMinSeqId: "0.8",
   relationK: 5,
@@ -361,6 +364,50 @@ function badges(values, className = "", limit = 14) {
   return shown + (items.length > limit ? `<span class="badge">+${items.length - limit}</span>` : "");
 }
 
+function enrichmentBadges(enrichments, limit = 14) {
+  const items = asArray(enrichments).filter(Boolean);
+  if (!items.length) return `<span class="muted">-</span>`;
+  
+  const uniqueFiltered = [];
+  const seenConcepts = new Set();
+  
+  for (const e of items) {
+    const cat = e.category || 'molecular_traits';
+    if (state.relationAttributeFilters && state.relationAttributeFilters[cat] === false) {
+      continue;
+    }
+    const concept = e.trait_concept || e.term;
+    if (!seenConcepts.has(concept)) {
+      seenConcepts.add(concept);
+      uniqueFiltered.push(e);
+    }
+  }
+
+  if (!uniqueFiltered.length) return `<span class="muted">No matches for active filters</span>`;
+
+  const categoryToEntityPalette = {
+    genes: "gene",
+    tissues: "anatomical_structure",
+    plant_traits: "plant_trait",
+    metabolites: "compound",
+    species: "taxon",
+    molecular_traits: "molecular_trait_or_function",
+    pathways: "pathway_or_process",
+    experimental_conditions: "experimental_condition",
+    human_traits: "cellular_component"
+  };
+
+  const shown = uniqueFiltered.slice(0, limit).map((e) => {
+    const cat = e.category || 'molecular_traits';
+    const mappedType = categoryToEntityPalette[cat] || 'unknown';
+    const color = colorForEntity(mappedType);
+    const label = e.trait_label || e.trait_concept;
+    return `<span class="badge enrichment" style="border-left: 3px solid ${color}; padding-left: 6px;" title="Category: ${esc(cat)}">${esc(clean(label))}</span>`;
+  }).join("");
+
+  return shown + (uniqueFiltered.length > limit ? `<span class="badge">+${uniqueFiltered.length - limit}</span>` : "");
+}
+
 function installGlobalHandlers() {
   els.paperSelect.addEventListener("change", () => loadPaper(els.paperSelect.value));
   els.searchInput.addEventListener("input", () => {
@@ -403,6 +450,9 @@ function installGlobalHandlers() {
     if (key === "entityScope" || key === "entityType") {
       state.selectedKind = null;
       state.selectedId = null;
+    }
+    if (key && key.startsWith("relationOutput")) {
+      state.relationExtractionPage = 0;
     }
     state.pathResults = [];
     state.discoverResults = [];
@@ -460,6 +510,19 @@ function installGlobalHandlers() {
       event.preventDefault();
       event.stopPropagation();
       closeEntityModal();
+      return;
+    }
+    const relationSearchTarget = clicked.closest("[data-relation-search]");
+    if (relationSearchTarget) {
+      event.__psfdActionHandled = true;
+      event.preventDefault();
+      event.stopPropagation();
+      state.relationActiveSubTab = "compound";
+      state.relationCompoundInput = relationSearchTarget.getAttribute("data-relation-search");
+      const compoundInput = document.getElementById("relationCompoundInput");
+      if (compoundInput) compoundInput.value = state.relationCompoundInput;
+      render();
+      setTimeout(() => runRelationExtraction(), 0);
       return;
     }
     const tab = clicked.closest("button[data-tab]");
@@ -3835,7 +3898,7 @@ function entitySummary(entity) {
         <div class="key">Ontology IDs</div><div>${ontologyIds.length ? badges(ontologyIds, "ontology", 8) : `<span class="muted">-</span>`}</div>
         <div class="key">Selected labels</div><div>${selectedLabels.length ? badges(selectedLabels, "", 8) : `<span class="muted">-</span>`}</div>
         <div class="key">Aliases</div><div>${badges(entity.aliases, "", 8)}</div>
-        ${entity.enrichments?.length ? `<div class="key">Enriched</div><div>${badges(entity.enrichments.map(e => e.trait_label || e.trait_concept), "enrichment", 8)}</div>` : ""}
+        ${entity.enrichments?.length ? `<div class="key">Enriched</div><div>${enrichmentBadges(entity.enrichments, 8)}</div>` : ""}
       </div>
       ${entityDescriptionBlock(entity)}
     </div>
@@ -4629,6 +4692,7 @@ function geneProteinExplorer(entity) {
   `;
 }
 
+
 function resourceMeta(values, limit = 5) {
   const items = uniqueStrings(asArray(values).map((value) => String(value || "").trim()).filter(Boolean));
   if (!items.length) return "";
@@ -4829,7 +4893,7 @@ function renderDiscoverWorkbench() {
         </div>
 
         <div class="relation-subtabs-container" role="tablist" aria-label="Query type">
-          <button class="relation-subtab ${state.relationActiveSubTab === "compound" ? "active" : ""}" data-relation-tab="compound" type="button" role="tab" aria-selected="${state.relationActiveSubTab === "compound"}">Compound Lookup</button>
+          <button class="relation-subtab ${state.relationActiveSubTab === "compound" ? "active" : ""}" data-relation-tab="compound" type="button" role="tab" aria-selected="${state.relationActiveSubTab === "compound"}">Name Lookup</button>
           <button class="relation-subtab ${state.relationActiveSubTab === "sequence" ? "active" : ""}" data-relation-tab="sequence" type="button" role="tab" aria-selected="${state.relationActiveSubTab === "sequence"}">Sequence Search</button>
           <button class="relation-subtab ${state.relationActiveSubTab === "enrichment" ? "active" : ""}" data-relation-tab="enrichment" type="button" role="tab" aria-selected="${state.relationActiveSubTab === "enrichment"}">Enrichment Search</button>
         </div>
@@ -4837,13 +4901,13 @@ function renderDiscoverWorkbench() {
         <div class="relation-tab-content">
           ${state.relationActiveSubTab === "compound" ? `
             <div class="query-box compound-query-box" role="tabpanel">
-              <textarea id="relationCompoundInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="piperonylic acid&#10;GABA&#10;ABA">${esc(state.relationCompoundInput)}</textarea>
+              <textarea id="relationCompoundInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="piperonylic acid&#10;APX1&#10;GABA">${esc(state.relationCompoundInput)}</textarea>
             </div>
           ` : state.relationActiveSubTab === "enrichment" ? `
             <div class="query-box enrichment-query-box" role="tabpanel">
               <select id="relationEnrichmentInput" size="12" style="width: 100%; min-height: 230px; border: 1px solid #b7cac3; border-radius: 8px; background: #fbfdfc; color: inherit; font-family: inherit; font-size: 14px; padding: 8px; outline: none; box-sizing: border-box;">
                 <option value="" disabled ${!state.relationEnrichmentInput ? "selected" : ""}>Select an enrichment trait...</option>
-                ${(state.globalEnrichments || []).map(e => `<option value="${esc(e.label || e.ontology_id)}" ${state.relationEnrichmentInput === (e.label || e.ontology_id) ? "selected" : ""}>${esc(e.label || e.ontology_id)}</option>`).join("")}
+                ${renderEnrichmentInputOptions()}
               </select>
             </div>
           ` : `
@@ -4912,7 +4976,7 @@ function renderDiscoverWorkbench() {
           </div>
           <div class="attribute-grid">
             ${relationAttributeCheckbox("genes", "Genes")}
-            ${relationAttributeCheckbox("tissues", "Tissues")}
+            ${relationAttributeCheckbox("tissues", "Site")}
             ${relationAttributeCheckbox("plant_traits", "Plant traits")}
             ${relationAttributeCheckbox("metabolites", "Metabolites")}
             ${relationAttributeCheckbox("species", "Species")}
@@ -4988,8 +5052,11 @@ function renderRelationExtractionResults() {
       </div>
     `;
   }
+  const itemsPerPage = 100;
   const filteredRows = relationFilteredExtractionResults();
-  const rows = filteredRows.slice(0, 80);
+  const totalFiltered = filteredRows.length;
+  const startIdx = (state.relationExtractionPage || 0) * itemsPerPage;
+  const rows = filteredRows.slice(startIdx, startIdx + itemsPerPage);
   const collapsedMatches = getCollapsedFastaMatches(state.relationSequenceMatches);
   const uniqueQueries = new Set(collapsedMatches.map(m => m.query_name));
   const showQueryName = uniqueQueries.size > 1;
@@ -4997,16 +5064,17 @@ function renderRelationExtractionResults() {
   const enrichmentsHtml = selectedMatch?.entity?.enrichments?.length ? `
     <div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card);">
       <h3 style="margin-top: 0; margin-bottom: 8px;">Enriched Traits for ${esc(selectedMatch.entity_label)}</h3>
-      <div>${badges(selectedMatch.entity.enrichments.map(e => e.trait_label || e.trait_concept), "enrichment", 20)}</div>
+      <div>${enrichmentBadges(selectedMatch.entity.enrichments, 20)}</div>
     </div>
   ` : "";
   return `
     <div class="relation-extraction-results">
+      ${relationOutputFilters()}
       ${state.relationSequenceMatches.length ? `
         <section class="sequence-match-strip">
           <div class="annotation-section-head">
-            <h5>FASTA matches</h5>
-            <span>${fmt(collapsedMatches.length)} protein${collapsedMatches.length === 1 ? "" : "s"} (${fmt(state.relationSequenceMatches.length)} total hits)</span>
+            <h5>${state.relationSearchTab === 'enrichment' ? 'Enrichment matches' : 'FASTA matches'}</h5>
+            <span>${fmt(collapsedMatches.length)} ${state.relationSearchTab === 'enrichment' ? (collapsedMatches.length === 1 ? "entity" : "entities") : (collapsedMatches.length === 1 ? "protein" : "proteins")} (${fmt(state.relationSequenceMatches.length)} total hits)</span>
           </div>
           <div class="sequence-match-grid">
             ${collapsedMatches.map(m => sequenceMatchCard(m, showQueryName)).join("")}
@@ -5022,15 +5090,68 @@ function renderRelationExtractionResults() {
           <span>${fmt(filteredRows.length)} of ${fmt(state.relationExtractionResults.length)} row${state.relationExtractionResults.length === 1 ? "" : "s"}</span>
         </div>
         ${relationOutputHelpDrawer()}
-        ${relationOutputFilters()}
         ${relationDownloadSchema()}
         ${enrichmentsHtml}
         ${rows.length ? relationExtractionGroupedResults(rows) : `<div class="annotation-empty compact">No rows match the active filters.</div>`}
-        ${filteredRows.length > rows.length ? `<p class="muted tiny">Showing first ${fmt(rows.length)} filtered rows. The download includes all extracted rows.</p>` : ""}
+        ${totalFiltered > itemsPerPage ? `
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+            <button class="secondary" onclick="state.relationExtractionPage = Math.max(0, (state.relationExtractionPage || 0) - 1); render();" ${startIdx === 0 ? "disabled" : ""}>Previous 100</button>
+            <span class="muted tiny" style="font-weight: 500; font-size: 13px;">Showing ${fmt(startIdx + 1)} - ${fmt(Math.min(startIdx + itemsPerPage, totalFiltered))} of ${fmt(totalFiltered)} filtered</span>
+            <button class="secondary" onclick="state.relationExtractionPage = (state.relationExtractionPage || 0) + 1; render();" ${startIdx + itemsPerPage >= totalFiltered ? "disabled" : ""}>Next 100</button>
+          </div>
+        ` : ""}
       </section>
     </div>
   `;
 }
+
+function renderEnrichmentInputOptions() {
+  const enrichments = state.globalEnrichments || [];
+  const grouped = {};
+  enrichments.forEach(e => {
+    const cat = e.category || 'molecular_traits';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(e);
+  });
+  
+  const categoryLabels = {
+    genes: "Genes",
+    tissues: "Site",
+    plant_traits: "Plant Traits",
+    metabolites: "Metabolites",
+    species: "Species",
+    molecular_traits: "Molecular Traits",
+    pathways: "Pathways & Processes",
+    experimental_conditions: "Experimental Conditions",
+    human_traits: "Human Traits"
+  };
+
+  const order = [
+    "plant_traits", "molecular_traits", "pathways", 
+    "metabolites", "tissues", "experimental_conditions", 
+    "species", "human_traits", "genes"
+  ];
+
+  const htmlParts = [];
+  order.forEach(cat => {
+    if (state.relationAttributeFilters && state.relationAttributeFilters[cat] === false) {
+      return;
+    }
+    const list = grouped[cat];
+    if (list && list.length) {
+      const label = categoryLabels[cat] || clean(cat);
+      htmlParts.push(`<optgroup label="${esc(label)}">`);
+      list.forEach(e => {
+        const val = e.label || e.ontology_id;
+        htmlParts.push(`<option value="${esc(val)}" ${state.relationEnrichmentInput === val ? "selected" : ""}>${esc(val)}</option>`);
+      });
+      htmlParts.push(`</optgroup>`);
+    }
+  });
+
+  return htmlParts.join("");
+}
+
 
 function relationOutputHelpDrawer() {
   return `
@@ -5054,7 +5175,11 @@ function relationOutputFilters() {
       ${relationOutputSelect("Enrichment (Protein Trait)", "relationOutputEnrichmentFilter", options.enrichments)}
       ${relationOutputSelect("Attribute", "relationOutputAttributeFilter", options.attributes)}
       ${relationOutputSelect("Species", "relationOutputSpeciesFilter", options.species)}
-      ${relationOutputSelect("Tissue/site", "relationOutputTissueFilter", options.tissues)}
+      ${relationOutputSelect("Site", "relationOutputTissueFilter", options.tissues)}
+      <label class="relation-output-toggle">
+        <input type="checkbox" data-state-key="relationOutputEnrichmentContextOnly" ${state.relationOutputEnrichmentContextOnly ? "checked" : ""}>
+        <span>Must contain enrichment in context</span>
+      </label>
       <label class="relation-output-toggle">
         <input type="checkbox" data-state-key="relationOutputDirectOnly" ${state.relationOutputDirectOnly ? "checked" : ""}>
         <span>Direct context only</span>
@@ -5088,12 +5213,14 @@ function relationOutputFilterOptions(rows) {
 }
 
 function resetRelationOutputFilters() {
+  state.relationExtractionPage = 0;
   state.relationOutputEnrichmentFilter = "all";
   state.relationOutputAttributeFilter = "all";
   state.relationOutputSpeciesFilter = "all";
   state.relationOutputTissueFilter = "all";
   state.relationOutputDirectOnly = false;
   state.relationOutputBestContextOnly = false;
+  state.relationOutputEnrichmentContextOnly = false;
 }
 
 function relationFilteredExtractionResults() {
@@ -5110,6 +5237,13 @@ function relationFilteredExtractionResults() {
       const selectedMatch = state.relationSequenceMatches.find(m => (m.accession || m.entity_label) === state.relationSelectedMatchEntity);
       if (selectedMatch && row.query_name !== selectedMatch.entity_label) return false;
     }
+    
+    if (state.relationOutputEnrichmentFilter !== "all" && state.relationOutputEnrichmentContextOnly) {
+      const enrichmentTerm = state.relationOutputEnrichmentFilter.toLowerCase();
+      const allContexts = [row.subject_name, row.object_name, row.context, row.event_taxon_tissue_context, row.entity_linked_taxon_tissue_context, row.overlap_taxon_tissue_context].join(" ").toLowerCase();
+      if (!allContexts.includes(enrichmentTerm)) return false;
+    }
+    
     if (state.relationOutputAttributeFilter !== "all" && row.attribute_type !== state.relationOutputAttributeFilter) return false;
     if (state.relationOutputSpeciesFilter !== "all" && !relationOutputContextItemsByKind(row, "species").includes(state.relationOutputSpeciesFilter)) return false;
     if (state.relationOutputTissueFilter !== "all" && !relationOutputContextItemsByKind(row, "tissue").includes(state.relationOutputTissueFilter)) return false;
@@ -5239,12 +5373,40 @@ function relationExtractionResultRow(row) {
   `;
 }
 
+function formatRelationLinks(row) {
+  if (row.subject_name && row.predicate && row.object_name) {
+    const btnStyle = "background:none;border:none;padding:0;color:#0366d6;text-decoration:none;cursor:pointer;font:inherit;font-weight:600;";
+    const subjBtn = `<button type="button" style="${btnStyle}" data-relation-search="${esc(row.subject_name)}" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${esc(row.subject_name)}</button>`;
+    const objBtn = `<button type="button" style="${btnStyle}" data-relation-search="${esc(row.object_name)}" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${esc(row.object_name)}</button>`;
+    return `${subjBtn} ${esc(row.predicate)} ${objBtn}`;
+  }
+
+  const norm = row.normalized_relation;
+  if (!norm) return esc(row.relation);
+  const firstPipe = norm.indexOf('|');
+  const lastPipe = norm.lastIndexOf('|');
+  if (firstPipe !== -1 && lastPipe !== -1 && firstPipe !== lastPipe) {
+    const firstSpaceAfterFirstPipe = norm.indexOf(' ', firstPipe);
+    const lastSpaceBeforeLastPipe = norm.lastIndexOf(' ', lastPipe);
+    if (firstSpaceAfterFirstPipe !== -1 && lastSpaceBeforeLastPipe !== -1 && firstSpaceAfterFirstPipe < lastSpaceBeforeLastPipe) {
+      const subjectName = norm.substring(0, firstPipe);
+      const objectName = norm.substring(lastSpaceBeforeLastPipe + 1, lastPipe);
+      const predicate = norm.substring(firstSpaceAfterFirstPipe, lastSpaceBeforeLastPipe + 1);
+      const btnStyle = "background:none;border:none;padding:0;color:#0366d6;text-decoration:none;cursor:pointer;font:inherit;font-weight:600;";
+      return `<button type="button" style="${btnStyle}" data-relation-search="${esc(subjectName)}" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${esc(subjectName)}</button>${esc(predicate)}<button type="button" style="${btnStyle}" data-relation-search="${esc(objectName)}" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${esc(objectName)}</button>`;
+    }
+  }
+  return esc(row.relation);
+}
+
 function relationExtractionRelationButton(row) {
   return `
-    <button class="relation-output-link" type="button" data-action="select-global" data-kind="relation" data-id="${esc(row.relation_id)}" data-pmcid="${esc(row.pmcid || "")}">
-      <span>${esc(row.relation)}</span>
-      <small>${esc([row.pmcid, "open triple"].filter(Boolean).join(" | "))}</small>
-    </button>
+    <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">
+      <span>${formatRelationLinks(row)}</span>
+      <button class="relation-output-link" style="margin:0; padding:2px 6px; font-size:11px;" type="button" data-action="select-global" data-kind="relation" data-id="${esc(row.relation_id)}" data-pmcid="${esc(row.pmcid || "")}">
+        ${esc([row.pmcid, "open triple"].filter(Boolean).join(" | "))}
+      </button>
+    </div>
   `;
 }
 
@@ -5397,7 +5559,7 @@ function relationOutputContextKind(item) {
     /\b(?:po|uberon|bto|cl):\d+/i.test(item) ||
     /\b(leaf|leaves|root|roots|shoot|shoots|stem|stems|seedling|seedlings|seed|seeds|flower|flowers|fruit|fruits|tuber|tubers|hypocotyl|cotyledon|chloroplast|tissue|tissues|cell|cells|membrane|organ|organs|stage|stages|vegetative|reproductive|photosynthetic apparatus)\b/i.test(text)
   ) {
-    return { key: "tissue", label: "Tissue/site", description: "Tissue, anatomy, cellular location, or stage context" };
+    return { key: "tissue", label: "Site", description: "Tissue, anatomy, cellular location, or stage context" };
   }
   return { key: "other", label: "Other", description: "Other experimental or biological context" };
 }
@@ -5436,7 +5598,6 @@ function sequenceMatchCard(match, showQueryName = false) {
         <b>${scoreValue}</b>
         <em>${scoreLabel}</em>
       </div>
-      <p>${esc(`Query coverage ${Math.round(match.query_coverage * 100)}%, target coverage ${Math.round(match.target_coverage * 100)}%`)}</p>
     </article>
   `;
 }
@@ -5478,11 +5639,15 @@ async function runRelationExtraction() {
       render();
     }
 
-    const fastaMatches = hasFasta ? await relationFastaMatches() : hasEnrichment ? await relationEnrichmentMatches() : [];
+    const fastaMatches = (isEnrichmentTab && hasEnrichment) ? await relationEnrichmentMatches() : (!isEnrichmentTab && !isCompoundTab && hasFasta) ? await relationFastaMatches() : [];
     state.relationSequenceMatches = fastaMatches;
     if (fastaMatches.length > 0) {
       const collapsed = getCollapsedFastaMatches(fastaMatches);
-      state.relationSelectedMatchEntity = collapsed[0].accession || collapsed[0].entity_label;
+      if (collapsed && collapsed.length > 0) {
+        state.relationSelectedMatchEntity = collapsed[0].accession || collapsed[0].entity_label;
+      } else {
+        state.relationSelectedMatchEntity = null;
+      }
     } else {
       state.relationSelectedMatchEntity = null;
     }
@@ -5515,12 +5680,14 @@ async function runRelationExtraction() {
     const rows = await extractResponse.json();
     state.relationExtractionResults = rows;
     resetRelationOutputFilters();
-    const submittedCount = compoundEntities.length + parseFastaRecords(state.relationFastaInput).length;
+    const submittedCount = compoundEntities.length 
+      + parseFastaRecords(state.relationFastaInput).length 
+      + (isEnrichmentTab && state.relationEnrichmentInput ? 1 : 0);
     state.relationExtractionStatus = rows.length
       ? `${fmt(rows.length)} relationship rows extracted from ${fmt(queryEntities.length)} matched PSFD entities.`
       : submittedCount
         ? "No endpoint relationships matched the selected attribute filters."
-        : "Enter at least one compound name or protein FASTA sequence.";
+        : "Enter at least one compound name, protein FASTA sequence, or enrichment term.";
     render();
 
     console.log(`SUCCESS: Relationship extraction completed. Extracted ${rows.length} rows.`);
@@ -5556,7 +5723,7 @@ async function relationCompoundEntities() {
   const response = await fetch('http://localhost:8999/api/resolve_entities', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ terms: terms, category: "compound" })
+    body: JSON.stringify({ terms: terms, category: "auto" })
   });
   if (!response.ok) throw new Error("Failed to resolve compound entities.");
   
@@ -5834,9 +6001,11 @@ function wrapSequence(sequence, width = 70) {
 }
 
 function exportRelationExtractionTable() {
-  if (!state.relationExtractionResults.length) return;
+  const filteredResults = relationFilteredExtractionResults();
+  if (!filteredResults.length) return;
   const header = [
     "compound_or_gene_name",
+    "pmcid",
     "relation",
     "context",
     "event_taxon_tissue_context",
@@ -5847,9 +6016,10 @@ function exportRelationExtractionTable() {
     "similarity_score",
     "similarity_score_type"
   ];
-  const sortedResults = [...state.relationExtractionResults].sort((a, b) => (b.score || 0) - (a.score || 0));
+  const sortedResults = [...filteredResults].sort((a, b) => (b.score || 0) - (a.score || 0));
   const rows = sortedResults.map((row) => [
     row.query_name,
+    row.pmcid,
     row.relation,
     row.context,
     row.event_taxon_tissue_context,
@@ -6922,6 +7092,7 @@ function bindAnnotationWorkspaceHandlers() {
     checkbox.addEventListener("change", (event) => {
       event.stopPropagation();
       state.relationAttributeFilters[checkbox.getAttribute("data-relation-attribute")] = checkbox.checked;
+      render();
     });
   });
 
