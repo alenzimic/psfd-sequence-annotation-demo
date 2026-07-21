@@ -72,6 +72,7 @@ const state = {
   relationOutputDirectOnly: false,
   relationOutputBestContextOnly: false,
   relationSequenceMatches: [],
+  relationCompoundMatches: [],
   relationEvalue: 0.001,
   relationMinSeqId: "0.8",
   relationK: 5,
@@ -5205,7 +5206,9 @@ function relationOutputSelect(label, key, values) {
 }
 
 function relationOutputFilterOptions(rows) {
-  const enrichments = uniqueStrings((state.relationSequenceMatches || []).flatMap(m => (m.entity?.enrichments || []).map(e => e.trait_label || e.trait_concept)).filter(Boolean)).sort((a, b) => a.localeCompare(b));
+  const seqEnrichments = (state.relationSequenceMatches || []).flatMap(m => (m.entity?.enrichments || []).map(e => e.trait_label || e.trait_concept));
+  const compoundEnrichments = (state.relationCompoundMatches || []).flatMap(c => (c.entity?.enrichments || []).map(e => e.trait_label || e.trait_concept));
+  const enrichments = uniqueStrings([...seqEnrichments, ...compoundEnrichments].filter(Boolean)).sort((a, b) => a.localeCompare(b));
   const attributes = uniqueStrings(rows.map((row) => row.attribute_type).filter(Boolean)).sort((a, b) => a.localeCompare(b));
   const species = uniqueStrings(rows.flatMap((row) => relationOutputContextItemsByKind(row, "species"))).sort((a, b) => a.localeCompare(b));
   const tissues = uniqueStrings(rows.flatMap((row) => relationOutputContextItemsByKind(row, "tissue"))).sort((a, b) => a.localeCompare(b));
@@ -5238,10 +5241,15 @@ function relationFilteredExtractionResults() {
       if (selectedMatch && row.query_name !== selectedMatch.entity_label) return false;
     }
     
-    if (state.relationOutputEnrichmentFilter !== "all" && state.relationOutputEnrichmentContextOnly) {
+    if (state.relationOutputEnrichmentFilter !== "all") {
       const enrichmentTerm = state.relationOutputEnrichmentFilter.toLowerCase();
-      const allContexts = [row.subject_name, row.object_name, row.context, row.event_taxon_tissue_context, row.entity_linked_taxon_tissue_context, row.overlap_taxon_tissue_context].join(" ").toLowerCase();
-      if (!allContexts.includes(enrichmentTerm)) return false;
+      if (state.relationOutputEnrichmentContextOnly) {
+        const allContexts = [row.subject_name, row.object_name, row.context, row.event_taxon_tissue_context, row.entity_linked_taxon_tissue_context, row.overlap_taxon_tissue_context].join(" ").toLowerCase();
+        if (!allContexts.includes(enrichmentTerm)) return false;
+      } else {
+        const allText = [row.subject_name, row.predicate, row.object_name, row.context, row.event_taxon_tissue_context, row.entity_linked_taxon_tissue_context, row.overlap_taxon_tissue_context].join(" ").toLowerCase();
+        if (!allText.includes(enrichmentTerm)) return false;
+      }
     }
     
     if (state.relationOutputAttributeFilter !== "all" && row.attribute_type !== state.relationOutputAttributeFilter) return false;
@@ -5624,6 +5632,7 @@ async function runRelationExtraction() {
     const isEnrichmentTab = state.relationActiveSubTab === "enrichment";
     
     const compoundEntities = isCompoundTab ? await relationCompoundEntities() : [];
+    state.relationCompoundMatches = compoundEntities;
     
     const hasFasta = (!isCompoundTab && !isEnrichmentTab) && parseFastaRecords(state.relationFastaInput).length > 0;
     const hasEnrichment = isEnrichmentTab && state.relationEnrichmentInput;
@@ -5967,6 +5976,7 @@ async function setRelationExtractionExample(kind) {
   }
   state.relationExtractionResults = [];
   state.relationSequenceMatches = [];
+  state.relationCompoundMatches = [];
   state.relationSelectedMatchEntity = null;
   resetRelationOutputFilters();
   state.relationExtractionStatus = kind === "fasta" || kind === "exact-fasta"
