@@ -5243,12 +5243,25 @@ function relationFilteredExtractionResults() {
     
     if (state.relationOutputEnrichmentFilter !== "all") {
       const enrichmentTerm = state.relationOutputEnrichmentFilter.toLowerCase();
+      const allEnrichmentObjects = (state.relationSequenceMatches || []).concat(state.relationCompoundMatches || [])
+        .flatMap(m => m.entity?.enrichments || []);
+      const matchedObject = allEnrichmentObjects.find(e => (e.trait_label || e.trait_concept).toLowerCase() === enrichmentTerm);
+      const matchedConcept = matchedObject?.trait_concept?.toLowerCase();
+
+      const filterMatches = (text) => {
+        if (!text) return false;
+        const lower = text.toLowerCase();
+        if (lower.includes(enrichmentTerm)) return true;
+        if (matchedConcept && lower.includes(matchedConcept)) return true;
+        return false;
+      };
+
       if (state.relationOutputEnrichmentContextOnly) {
-        const allContexts = [row.subject_name, row.object_name, row.context, row.event_taxon_tissue_context, row.entity_linked_taxon_tissue_context, row.overlap_taxon_tissue_context].join(" ").toLowerCase();
-        if (!allContexts.includes(enrichmentTerm)) return false;
+        const allContexts = [row.subject_name, row.object_name, row.context, row.event_taxon_tissue_context, row.entity_linked_taxon_tissue_context, row.overlap_taxon_tissue_context].join(" ");
+        if (!filterMatches(allContexts)) return false;
       } else {
-        const allText = [row.subject_name, row.predicate, row.object_name, row.context, row.event_taxon_tissue_context, row.entity_linked_taxon_tissue_context, row.overlap_taxon_tissue_context].join(" ").toLowerCase();
-        if (!allText.includes(enrichmentTerm)) return false;
+        const allText = [row.subject_name, row.predicate, row.object_name, row.context, row.event_taxon_tissue_context, row.entity_linked_taxon_tissue_context, row.overlap_taxon_tissue_context].join(" ");
+        if (!filterMatches(allText)) return false;
       }
     }
     
