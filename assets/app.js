@@ -1,4 +1,5 @@
 "use strict";
+window.PSMM_API_BASE = 'http://localhost:8999';
 
 const state = {
   manifest: null,
@@ -868,7 +869,7 @@ async function init() {
 }
 
 async function fetchJson(path) {
-  const url = path.startsWith('http') ? path : `http://localhost:8999/api/${path}`;
+  const url = path.startsWith('http') ? path : `${window.PSMM_API_BASE}/api/${path}`;
   const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) throw new Error(`Could not load ${url}: ${response.status}`);
   return response.json();
@@ -4832,7 +4833,7 @@ function safeFastaFilename(value) {
   return `${String(value || "sequence").replace(/[^\w.-]+/g, "_")}.fasta`;
 }
 
-function compoundStaticProperties(entity) {
+function compoundOntologyProperties(entity) {
   const compound = compoundMeta(entity);
   if (!compound) return "";
   const cf = compound.classyfire || {};
@@ -5679,7 +5680,7 @@ async function runRelationExtraction() {
     ];
 
     // Fetch the relationship rows directly from the backend API
-    const extractResponse = await fetch('http://localhost:8999/api/extract', {
+    const extractResponse = await fetch(`${window.PSMM_API_BASE}/api/extract`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -5742,7 +5743,7 @@ async function relationCompoundEntities() {
     
   if (!terms.length) return [];
   
-  const response = await fetch('http://localhost:8999/api/resolve_entities', {
+  const response = await fetch(`${window.PSMM_API_BASE}/api/resolve_entities`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ terms: terms, category: "auto" })
@@ -5761,7 +5762,7 @@ async function relationFastaMatches() {
 
   for (const query of queries) {
     try {
-      const response = await fetch('http://localhost:8999/search', {
+      const response = await fetch(`${window.PSMM_API_BASE}/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -5826,7 +5827,7 @@ async function relationEnrichmentMatches() {
   const matches = [];
   for (const term of terms) {
     try {
-      const response = await fetch('http://localhost:8999/api/search_by_enrichment', {
+      const response = await fetch(`${window.PSMM_API_BASE}/api/search_by_enrichment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ term })
@@ -8057,7 +8058,7 @@ function hypothesisMarkdown(path, index) {
     ...path.edges.map((edge, edgeIndex) => `${edgeIndex + 1}. ${edgeReportText(edge)}`),
     "",
     "## Provenance",
-    `Generated from PSFD visual demo static data on ${new Date().toISOString()}.`,
+    `Generated from PSFD visual demo live API data on ${new Date().toISOString()}.`,
     "Use the in-page Open buttons to inspect the source event, relation, dependency, or entity records."
   ];
   return `${lines.join("\n")}\n`;
@@ -8273,7 +8274,7 @@ async function loadGlobalPathIndex() {
       console.error("Could not load database stats:", error);
     }
     try {
-      const response = await fetch('http://localhost:8999/api/enriched_traits');
+      const response = await fetch(`${window.PSMM_API_BASE}/api/enriched_traits`);
       if (response.ok) {
         state.globalEnrichments = await response.json();
       } else {
@@ -9129,7 +9130,7 @@ function loadPhytozomeFastaData(entityId, geneId, trigger = null) {
   if (!fasta) {
     container.innerHTML = `
       <div class="compact-card muted">
-        No static Phytozome FASTA sequence is available for ${esc(geneId)} in this demo build.
+        No Phytozome FASTA sequence is available for ${esc(geneId)} in this demo build.
       </div>
     `;
     return;
@@ -9158,7 +9159,7 @@ function downloadPhytozomeFastaData(entityId, geneId, trigger = null) {
     if (container) {
       container.innerHTML = `
         <div class="compact-card muted">
-          No static Phytozome FASTA sequence is available for ${esc(geneId)} in this demo build.
+          No Phytozome FASTA sequence is available for ${esc(geneId)} in this demo build.
         </div>
       `;
     }
@@ -9175,7 +9176,7 @@ function downloadPhytozomeFastaData(entityId, geneId, trigger = null) {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(blobUrl), 1200);
   if (container) {
-    container.innerHTML = `<div class="compact-card">Downloaded ${esc(filename)} from the static Phytozome source record.</div>`;
+    container.innerHTML = `<div class="compact-card">Downloaded ${esc(filename)} from the Phytozome source record.</div>`;
   }
 }
 
@@ -9241,7 +9242,7 @@ async function loadPubChemData(entity, cid, container) {
         </div>
         <div class="compound-properties">
           <h3>${esc(props.IUPACName || entity.selected_label || entityName(entity))}</h3>
-          ${compoundStaticProperties(entity)}
+          ${compoundOntologyProperties(entity)}
           ${compoundProperty("Formula", props.MolecularFormula)}
           ${compoundProperty("Molecular weight", props.MolecularWeight)}
           ${compoundProperty("XLogP", props.XLogP)}
@@ -9259,8 +9260,8 @@ async function loadPubChemData(entity, cid, container) {
         <div>${compoundImageFallback(cid, entity)}</div>
         <div class="compound-properties">
           <h3>${esc(entity.selected_label || entityName(entity))}</h3>
-          ${compoundStaticProperties(entity)}
-          <div class="compact-card muted">Live PubChem enrichment failed: ${esc(error.message)}. The static ontology metadata is still shown above.</div>
+          ${compoundOntologyProperties(entity)}
+          <div class="compact-card muted">Live PubChem enrichment failed: ${esc(error.message)}. The local ontology metadata is still shown above.</div>
         </div>
       </div>
     `;
@@ -9307,7 +9308,7 @@ async function loadChebiData(entity, id, container) {
         </div>
         <div class="compound-properties">
           <h3>${esc(term.label || entity.selected_label || entityName(entity))}</h3>
-          ${compoundStaticProperties(entity)}
+          ${compoundOntologyProperties(entity)}
           ${compoundProperty("ChEBI ID", id)}
           ${compoundProperty("Ontology", "ChEBI")}
           ${compoundProperty("Formula", firstAnnotation(annotation.generalized_empirical_formula) || props.MolecularFormula)}
@@ -9328,8 +9329,8 @@ async function loadChebiData(entity, id, container) {
         <div>${chebiStructureFallback(id, {}, "")}</div>
         <div class="compound-properties">
           <h3>${esc(entity.selected_label || entityName(entity))}</h3>
-          ${compoundStaticProperties(entity)}
-          <div class="compact-card muted">Live ChEBI enrichment failed: ${esc(error.message)}. The static Step 9 metadata is still shown above.</div>
+          ${compoundOntologyProperties(entity)}
+          <div class="compact-card muted">Live ChEBI enrichment failed: ${esc(error.message)}. The local Step 9 metadata is still shown above.</div>
         </div>
       </div>
     `;

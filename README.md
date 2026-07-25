@@ -25,9 +25,13 @@ To use this front-end interface, you must first have the PSMM backend server run
 
 ## Configuration
 
-This demo is currently configured to point to a local backend API at `http://localhost:8999`.
+This demo is currently configured to point to a live backend API.
 
-If you need to change the API URL, update the fetch requests in `assets/app.js`.
+To change the API URL (e.g. for deployment), edit the `window.PSMM_API_BASE` configuration variable located at the very top of `assets/app.js`:
+```javascript
+// Example: Deploying to production
+window.PSMM_API_BASE = 'https://api.yourdomain.com';
+```
 
 ## Note on Legacy Code
 Previous static data building scripts have been removed as this application now dynamically relies on the live PSMM API server rather than statically built JSON bundles.
